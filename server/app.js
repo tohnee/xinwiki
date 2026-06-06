@@ -964,6 +964,139 @@ export async function createApp(options = {}) {
     });
   });
 
+  app.post("/api/chat/message/stream", requireAuth, async (req, res) => {
+    const parsed = chatSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid chat payload." });
+      return;
+    }
+
+    const thread = db.getOrCreateThread(req.auth.workspace.id);
+    const question = parsed.data.question;
+    db.addMessage(thread.id, "user", question);
+    const runtimeSnapshot = db.getRuntimeSnapshot(req.auth.workspace.id);
+    const grounded = groundedAnswer({ runtimeSnapshot, question });
+
+    // 设置 SSE 响应头
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    const sseWrite = (data) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    if (!grounded.canAnswer) {
+      sseWrite({ event: "message", answer: grounded.answer, citations: grounded.citations });
+      sseWrite({ event: "message_end", answer: grounded.answer, citations: grounded.citations });
+      db.addMessage(thread.id, "assistant", grounded.answer, grounded.citations);
+      res.end();
+      return;
+    }
+
+    if (!process.env.DIFY_API_BASE_URL || !process.env.DIFY_API_KEY) {
+      sseWrite({ event: "message", answer: grounded.answer, citations: grounded.citations });
+      sseWrite({ event: "message_end", answer: grounded.answer, citations: grounded.citations });
+      db.addMessage(thread.id, "assistant", grounded.answer, grounded.citations);
+      res.end();
+      return;
+    }
+
+    // 调用 Dify 流式 API
+    try {
+      const difyResponse = await fetch(
+        `${process.env.DIFY_API_BASE_URL.replace(/\/$/, "")}/chat-messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            inputs: {
+              grounding_context: grounded.context,
+              grounding_citations: grounded.citations.join(" | "),
+            },
+            query: question,
+            response_mode: "streaming",
+            conversation_id: thread.dify_conversation_id || undefined,
+            user: req.auth.user.id,
+          }),
+        },
+      );
+
+      if (!difyResponse.ok) {
+        const errorBody = await difyResponse.text();
+        sseWrite({ event: "error", message: `Dify request failed: ${difyResponse.status}` });
+        sseWrite({ event: "message_end", answer: grounded.answer, citations: grounded.citations });
+        db.addMessage(thread.id, "assistant", grounded.answer, grounded.citations);
+        res.end();
+        return;
+      }
+
+      // 代理 Dify 的 SSE 流
+      const reader = difyResponse.body.getReader();
+      const decoder = new TextDecoder();
+      let fullAnswer = "";
+      let conversationId = thread.dify_conversation_id;
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6).trim();
+              if (!data) continue;
+
+              res.write(`data: ${data}\n\n`);
+
+              try {
+                const parsedEvent = JSON.parse(data);
+                if (parsedEvent.event === "message_end") {
+                  fullAnswer = parsedEvent.answer || fullAnswer;
+                  conversationId = parsedEvent.conversation_id || conversationId;
+                } else if (parsedEvent.answer) {
+                  fullAnswer += parsedEvent.answer;
+                }
+              } catch {
+                // JSON 解析失败，继续
+              }
+            }
+          }
+        }
+      } catch (streamError) {
+        sseWrite({ event: "error", message: streamError.message });
+      }
+
+      // 持久化完整回答
+      db.addMessage(thread.id, "assistant", fullAnswer || grounded.answer, grounded.citations);
+      if (conversationId && conversationId !== thread.dify_conversation_id) {
+        db.updateThread(req.auth.workspace.id, {
+          ...thread,
+          difyConversationId: conversationId,
+        });
+      }
+
+      res.end();
+    } catch (error) {
+      sseWrite({ event: "error", message: error.message });
+      sseWrite({ event: "message_end", answer: grounded.answer, citations: grounded.citations });
+      db.addMessage(thread.id, "assistant", grounded.answer, grounded.citations);
+      res.end();
+    }
+  });
+
   app.post("/api/reports/generate", requireAuth, (req, res) => {
     const parsed = reportSchema.safeParse(req.body);
     if (!parsed.success) {

@@ -305,6 +305,8 @@ th{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.06
 .msg.refuse{align-self:flex-start;background:var(--rose-soft);border:1px solid #ffd2da;color:#7f1d1d;border-bottom-left-radius:6px}
 .msg .cite{display:inline-flex;margin-top:9px;font-size:11px;color:var(--indigo);font-family:var(--mono)}
 .msg.refuse .cite{color:#be123c}
+.streaming-cursor{animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
 .chat-input{padding:16px;border-top:1px solid var(--line);display:flex;gap:10px;background:#fff}
 .chat-input input{flex:1;border:1px solid var(--line2);border-radius:99px;padding:13px 18px;outline:none;background:var(--bg-soft)}
 .chat-input input:focus{border-color:var(--indigo);background:#fff}
@@ -2132,35 +2134,107 @@ function quickAsk(q){
   },60);
 }
 async function ask(){
+  return askStream();
+}
+async function askStream(){
   const input=$('askInput'),q=input.value.trim();
   if(!q)return;
 
   const body=$('chatBody');
   body.insertAdjacentHTML('beforeend',`<div class="msg user">${esc(q)}</div>`);
   input.value='';
+
+  // 创建助手消息占位
+  const assistantMsg=document.createElement('div');
+  assistantMsg.className='msg assistant';
+  assistantMsg.innerHTML='<span class="streaming-cursor">▌</span>';
+  body.appendChild(assistantMsg);
+  body.scrollTop=body.scrollHeight;
+
+  let fullAnswer='';
+  let citations=[];
+
   try{
-    const result=await api('/api/chat/message',{
+    const response=await fetch('/api/chat/message/stream',{
       method:'POST',
-      body:JSON.stringify({question:q})
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({question:q}),
+      credentials:'same-origin',
     });
+
+    if(!response.ok){
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let buffer='';
+
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+
+      buffer+=decoder.decode(value,{stream:true});
+      const lines=buffer.split('\n');
+      buffer=lines.pop()||'';
+
+      for(const line of lines){
+        if(line.startsWith('data: ')){
+          const data=line.slice(6).trim();
+          if(!data)continue;
+
+          try{
+            const parsed=JSON.parse(data);
+            if(parsed.event==='message_end'){
+              fullAnswer=parsed.answer||fullAnswer;
+              citations=parsed.citations||citations;
+            }else if(parsed.answer){
+              fullAnswer+=parsed.answer;
+            }else if(parsed.event==='error'){
+              fullAnswer+=`\n\n[错误: ${parsed.message}]`;
+            }
+          }catch{
+            // 忽略非 JSON 数据
+          }
+
+          // 实时渲染
+          assistantMsg.innerHTML=renderChatMessage({
+            role:'assistant',
+            content:fullAnswer,
+            citations:citations,
+          })+'<span class="streaming-cursor">▌</span>';
+          body.scrollTop=body.scrollHeight;
+        }
+      }
+    }
+  }catch(err){
+    assistantMsg.innerHTML=renderChatMessage({
+      role:'assistant',
+      content:fullAnswer||`请求失败: ${err.message}`,
+      citations:citations,
+    });
+  }
+
+  // 移除光标
+  assistantMsg.innerHTML=renderChatMessage({
+    role:'assistant',
+    content:fullAnswer,
+    citations:citations,
+  });
+
+  // 重新加载消息列表
+  try{
+    const result=await api('/api/chat/messages');
     chatThread=result.thread||chatThread;
     chatMessages=result.messages||chatMessages;
-    lastQuestion=q;
-    lastAnswer=result.answer;
-    lastCitations=result.citations||[];
-    body.innerHTML=chatMessages.length?chatMessages.map(renderChatMessage).join(''):'';
-    body.scrollTop=body.scrollHeight;
-    const d=$('qaDraft');
-    if(d)d.value=`Q: ${q}\n\nA: ${result.answer}\n\nCitations: ${(result.citations||[]).join(' | ')}`;
-  }catch(err){
-    body.insertAdjacentHTML('beforeend',`
-      <div class="msg refuse">
-        ${esc(err.message)}<br>
-        <span class="cite">request failed</span>
-      </div>
-    `);
-    body.scrollTop=body.scrollHeight;
-  }
+  }catch{}
+
+  lastQuestion=q;
+  lastAnswer=fullAnswer;
+  lastCitations=citations;
+
+  const d=$('qaDraft');
+  if(d)d.value=`Q: ${q}\n\nA: ${fullAnswer}\n\nCitations: ${(citations||[]).join(' | ')}`;
 }
 function fillLastAnswer(){
   $('qaDraft').value=lastAnswer
