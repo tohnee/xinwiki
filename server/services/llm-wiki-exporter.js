@@ -49,9 +49,11 @@ export async function exportWorkspaceToLlmWiki({
 }) {
   const wikiDir = path.join(outputDir, "wiki");
   const schemaDir = path.join(outputDir, "_schema");
+  const rawDir = path.join(outputDir, "raw");
 
   await ensureDir(wikiDir);
   await ensureDir(schemaDir);
+  await ensureDir(rawDir);
 
   for (const page of wikiPages) {
     const relatedLinks = Array.from(
@@ -104,6 +106,22 @@ export async function exportWorkspaceToLlmWiki({
     JSON.stringify(graph, null, 2),
     "utf8",
   );
+  await fs.writeFile(
+    path.join(schemaDir, "AGENTS.md"),
+    buildLlmWikiProtocol({ workspace }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(rawDir, "manifest.md"),
+    [
+      `# ${workspace.name || "Workspace"} Raw Sources`,
+      "",
+      "Raw source binaries remain in XinWiki protected storage. This manifest records immutable source identifiers referenced by legacy wiki pages.",
+      "",
+      ...wikiPages.map((page) => `- ${page.source || page.title}`),
+    ].join("\n"),
+    "utf8",
+  );
 
   return {
     outputDir,
@@ -111,6 +129,50 @@ export async function exportWorkspaceToLlmWiki({
     nodeCount: graph.nodes.length,
     edgeCount: graph.edges.length,
   };
+}
+
+
+function buildLlmWikiProtocol({ workspace }) {
+  return [
+    `# ${workspace.name || "XinWiki"} llm-wiki Protocol`,
+    "",
+    "This workspace follows the llm-wiki pattern: raw sources are immutable evidence, wiki pages are LLM-maintained synthesis, and this schema governs ingest, query, lint, and export behavior.",
+    "",
+    "## Layers",
+    "",
+    "1. `raw/` — immutable source manifest and pointers. Do not rewrite evidence; ingest a newer source instead.",
+    "2. `wiki/` — generated Markdown pages with frontmatter, provenance, and wikilinks.",
+    "3. `_schema/` — operating protocol plus `graph.json` for the entry/edge projection.",
+    "4. `index.md` — content-oriented catalog read before answering.",
+    "5. `log.md` — append-only chronological compilation history.",
+    "",
+    "## Query workflow",
+    "",
+    "- Read `index.md` first, then relevant `wiki/*.md` pages.",
+    "- Answer only from cited wiki/source evidence. If evidence is missing, say what source is needed.",
+    "- Valuable answers should be filed back as new sourced wiki pages in future ingests.",
+    "",
+    "## Generation workflow",
+    "",
+    "- Reports, PPT outlines, briefs, images, and other generated artifacts must be grounded in user documents, compiled wiki entries, QA records, or explicit expert injections.",
+    "- Preserve citations in every conclusion-bearing section.",
+    "- Prefer clear hierarchy, concise claims, and visually scannable layouts.",
+  ].join("\n");
+}
+
+function buildRawManifest({ workspace, runtime }) {
+  const sourceIds = Array.from(new Set([
+    ...(runtime.entries || []).flatMap((entry) => entry.sourceRefs || []).map((ref) => ref.sourceId),
+    ...(runtime.edges || []).flatMap((edge) => edge.evidenceRefs || []).map((ref) => ref.sourceId),
+  ].filter(Boolean))).sort();
+
+  return [
+    `# ${workspace.name || "Workspace"} Raw Sources`,
+    "",
+    "Raw source binaries remain in XinWiki protected storage. This manifest records immutable source identifiers referenced by the exported wiki projection.",
+    "",
+    ...(sourceIds.length ? sourceIds.map((sourceId) => `- ${sourceId}`) : ["_No runtime source references exported yet._"]),
+  ].join("\n");
 }
 
 // ── YAML safe helpers ────────────────────────────────────────────────────────
@@ -186,9 +248,11 @@ export async function exportRuntimeToLlmWiki({
 }) {
   const wikiDir = path.join(outputDir, "wiki");
   const schemaDir = path.join(outputDir, "_schema");
+  const rawDir = path.join(outputDir, "raw");
 
   await ensureDir(wikiDir);
   await ensureDir(schemaDir);
+  await ensureDir(rawDir);
 
   const activeEntries = (runtime.entries || []).filter(
     (e) => e.status !== "superseded",
@@ -295,6 +359,16 @@ export async function exportRuntimeToLlmWiki({
   await fs.writeFile(
     path.join(schemaDir, "graph.json"),
     JSON.stringify(graph, null, 2),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(schemaDir, "AGENTS.md"),
+    buildLlmWikiProtocol({ workspace }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(rawDir, "manifest.md"),
+    buildRawManifest({ workspace, runtime }),
     "utf8",
   );
 

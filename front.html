@@ -1510,6 +1510,21 @@ async function quickSetExpert(entity,weight){
   }
 }
 
+
+async function exportOntologyJson(){
+  try{
+    const graph=await api('/api/ontology/export');
+    downloadTextFile(
+      JSON.stringify(graph,null,2),
+      'xinwiki-ontology.json',
+      'application/json;charset=utf-8'
+    );
+    toast('本体 JSON 已导出，包含 expertWeight 与 expertNote');
+  }catch(err){
+    toast(err.message);
+  }
+}
+
 function renderOntology(){
   const pos=Object.fromEntries(ontoNodes.map(n=>[n.id,n]));
   const active=ontoNodes.find(n=>n.id===activeNode)||ontoNodes[0];
@@ -1532,7 +1547,7 @@ function renderOntology(){
       </div>
       <div class="gen-actions">
         <button class="btn secondary" onclick="toast('图谱已重新布局')">重新布局</button>
-        <button class="btn secondary" onclick="toast('本体 JSON 已导出，包含 expertWeight 与 expertNote')">导出 JSON</button>
+        <button class="btn secondary" onclick="exportOntologyJson()">导出 JSON</button>
       </div>
     </div>
 
@@ -2699,7 +2714,7 @@ function renderReportOutput(type,payload){
         </div>
         <div class="gen-actions">
           <button class="btn secondary" onclick="copyGeneratedMarkdown('报告 Markdown ')">复制 Markdown</button>
-          <button class="btn secondary" onclick="toast('Word / PDF 导出将在后续任务中接入')">导出 Word / PDF</button>
+          <button class="btn secondary" onclick="generateDoc('export')">导出 Word / PDF</button>
         </div>
       </div>
       <div class="output-body">
