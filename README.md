@@ -98,6 +98,7 @@ npm start
 - `GET /api/chat/thread`
 - `GET /api/chat/messages`
 - `POST /api/chat/message`
+- `POST /api/chat/message/stream`
 - `POST /api/reports/generate`
 - `POST /api/reports/export`
 - `POST /api/llm-wiki/export`
@@ -160,7 +161,7 @@ Upload → Parser Adapter → DocumentParseResult → Compiler → Runtime (entr
 npm test
 ```
 
-当前测试覆盖（11 文件 / 40 用例）：
+当前测试覆盖（11 文件 / 42 用例）：
 
 - 注册、登录、当前用户
 - Parser Adapter 契约与 `.markdown` 文本解析
@@ -172,12 +173,11 @@ npm test
 - 注册后 `bootstrap`、来源解析、jobs 回填与导出流程
 - 上传安全校验
 - 双用户 source / chat / memory 隔离
-- memory / qa record 参与 grounded 问答
 - 报告模板结构与 Word / PDF 真导出
 
 ## 当前限制
 
-- Dify 对话当前走阻塞式请求，未做流式输出
 - 上传后的文档解析仍是轻量摘要，不包含真正的 PDF/DOCX 内容抽取
 - PDF / DOCX 依赖 macOS 系统工具导出，跨平台兼容性尚未额外封装
 - 前端仍是单文件应用，但来源页、报告页、Wiki / 本体关键动作已切到真实后端 API
+- Dify 流式端点已实现，但未覆盖 token 用量统计

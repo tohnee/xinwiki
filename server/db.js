@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import Database from "better-sqlite3";
 
 import { DEMO_WORKSPACE } from "./data/demo-workspace.js";
@@ -18,7 +20,7 @@ import {
 import { ensureDir, nowIso, safeJsonParse } from "./utils.js";
 
 function createId(prefix) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${crypto.randomUUID()}`;
 }
 
 function entityRowId(workspaceId, entityId) {
@@ -243,6 +245,16 @@ export async function createDatabase({ dataDir }) {
       PRIMARY KEY (workspace_id, id),
       FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_sources_workspace ON sources(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_wiki_pages_workspace ON wiki_pages(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_ontology_nodes_workspace ON ontology_nodes(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_ontology_edges_workspace ON ontology_edges(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_expert_injections_workspace ON expert_injections(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_qa_records_workspace ON qa_records(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_memories_workspace ON memories(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_threads_workspace ON chat_threads(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON jobs(workspace_id);
   `);
 
   return buildApi(db);

@@ -309,6 +309,60 @@ describe("chat APIs", () => {
     expect(chatResponse.body.answer).toMatch(/Project Aurora/);
     expect(chatResponse.body.citations.join(" ")).toMatch(/page:Project Aurora/i);
   });
+
+  it("passes AbortSignal to fetch when calling Dify", async () => {
+    process.env.DIFY_API_BASE_URL = "https://dify-signal.example.test/v1";
+    process.env.DIFY_API_KEY = "test-signal-key";
+    process.env.DIFY_TIMEOUT_MS = "5000";
+
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          answer: "Dify answer with signal.",
+          conversation_id: "conv_signal",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ));
+    globalThis.fetch = fetchMock;
+
+    const app = await makeApp();
+    const uploadDir = await fs.mkdtemp(path.join(os.tmpdir(), "xinwiki-signal-"));
+    tempDirs.push(uploadDir);
+
+    const registerResponse = await request(app).post("/api/auth/register").send({
+      email: "signal@example.com",
+      password: "Passw0rd!",
+      displayName: "Signal Tester",
+    });
+    const cookie = registerResponse.headers["set-cookie"];
+
+    const markdownPath = path.join(uploadDir, "signal-doc.md");
+    await fs.writeFile(
+      markdownPath,
+      "# Signal Test\n\n文档中包含测试数据。\n",
+      "utf8",
+    );
+
+    await request(app)
+      .post("/api/sources/upload-and-build")
+      .set("Cookie", cookie)
+      .attach("files", markdownPath)
+      .expect(201);
+
+    await request(app)
+      .post("/api/chat/message")
+      .set("Cookie", cookie)
+      .send({ question: "测试数据" });
+
+    const difyCall = fetchMock.mock.calls.find(
+      (call) => call[0]?.includes?.("chat-messages"),
+    );
+    expect(difyCall).toBeTruthy();
+    expect(difyCall[1].signal).toBeInstanceOf(AbortSignal);
+  });
 });
 
 describe("chat stream", () => {
@@ -381,6 +435,7 @@ describe("chat stream", () => {
     expect(difyCall).toBeTruthy();
     const difyBody = JSON.parse(difyCall[1].body);
     expect(difyBody.response_mode).toBe("streaming");
+    expect(difyCall[1].signal).toBeInstanceOf(AbortSignal);
 
     // 验证消息持久化 (通过 messages API)
     const messagesResponse = await request(app)

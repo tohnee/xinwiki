@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,14 +88,14 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set([
 ]);
 
 function createId(prefix) {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${crypto.randomUUID()}`;
 }
 
 function setAuthCookie(res, token) {
   res.cookie("xinwiki_token", token, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: false,
+    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    secure: process.env.NODE_ENV === "production",
     maxAge: 1000 * 60 * 60 * 24 * 7,
   });
 }
@@ -335,35 +336,44 @@ async function askDify({ config, userId, question, thread, grounded }) {
     return null;
   }
 
-  const response = await fetch(`${config.apiBaseUrl.replace(/\/$/, "")}/chat-messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      inputs: {
-        grounding_context: grounded.context,
-        grounding_citations: grounded.citations.join(" | "),
+  const timeout = parseInt(process.env.DIFY_TIMEOUT_MS || "30000", 10);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(`${config.apiBaseUrl.replace(/\/$/, "")}/chat-messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
       },
-      query: question,
-      response_mode: "blocking",
-      conversation_id: thread.dify_conversation_id || undefined,
-      user: userId,
-    }),
-  });
+      body: JSON.stringify({
+        inputs: {
+          grounding_context: grounded.context,
+          grounding_citations: grounded.citations.join(" | "),
+        },
+        query: question,
+        response_mode: "blocking",
+        conversation_id: thread.dify_conversation_id || undefined,
+        user: userId,
+      }),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Dify request failed: ${response.status} ${body}`);
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Dify request failed: ${response.status} ${body}`);
+    }
+
+    const data = await response.json();
+    return {
+      answer: data.answer || "Dify 没有返回文本。",
+      citations: grounded.citations,
+      conversationId: data.conversation_id || thread.dify_conversation_id || null,
+    };
+  } finally {
+    clearTimeout(timer);
   }
-
-  const data = await response.json();
-  return {
-    answer: data.answer || "Dify 没有返回文本。",
-    citations: grounded.citations,
-    conversationId: data.conversation_id || thread.dify_conversation_id || null,
-  };
 }
 
 export async function createApp(options = {}) {
@@ -371,7 +381,20 @@ export async function createApp(options = {}) {
   const uploadsDir = options.uploadsDir || path.join(dataDir, "uploads");
   const llmWikiDir = options.llmWikiDir || path.join(dataDir, "llm-wiki");
   const exportsDir = options.exportsDir || path.join(dataDir, "exports");
-  const jwtSecret = options.jwtSecret || process.env.JWT_SECRET || "xinwiki-dev-secret";
+
+  let jwtSecret = options.jwtSecret || process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "JWT_SECRET is required in production. Set it in .env or pass jwtSecret option.",
+      );
+    }
+    jwtSecret = "xinwiki-dev-secret";
+    console.warn(
+      "WARNING: Using default JWT secret. Set JWT_SECRET in .env for your environment.",
+    );
+  }
+
   const staticRoot = options.staticRoot || projectRoot;
   const parserAdapter = options.parserAdapter || createDefaultParserAdapter();
 
@@ -611,7 +634,7 @@ export async function createApp(options = {}) {
     });
   });
 
-  app.post("/api/auth/logout", (_req, res) => {
+  app.post("/api/auth/logout", requireAuth, (_req, res) => {
     clearAuthCookie(res);
     res.json({ ok: true });
   });
@@ -1007,26 +1030,36 @@ export async function createApp(options = {}) {
 
     // 调用 Dify 流式 API
     try {
-      const difyResponse = await fetch(
-        `${process.env.DIFY_API_BASE_URL.replace(/\/$/, "")}/chat-messages`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            inputs: {
-              grounding_context: grounded.context,
-              grounding_citations: grounded.citations.join(" | "),
+      const streamTimeout = parseInt(process.env.DIFY_TIMEOUT_MS || "30000", 10);
+      const streamController = new AbortController();
+      const streamTimer = setTimeout(() => streamController.abort(), streamTimeout);
+
+      let difyResponse;
+      try {
+        difyResponse = await fetch(
+          `${process.env.DIFY_API_BASE_URL.replace(/\/$/, "")}/chat-messages`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
+              "Content-Type": "application/json",
             },
-            query: question,
-            response_mode: "streaming",
-            conversation_id: thread.dify_conversation_id || undefined,
-            user: req.auth.user.id,
-          }),
-        },
-      );
+            body: JSON.stringify({
+              inputs: {
+                grounding_context: grounded.context,
+                grounding_citations: grounded.citations.join(" | "),
+              },
+              query: question,
+              response_mode: "streaming",
+              conversation_id: thread.dify_conversation_id || undefined,
+              user: req.auth.user.id,
+            }),
+            signal: streamController.signal,
+          },
+        );
+      } finally {
+        clearTimeout(streamTimer);
+      }
 
       if (!difyResponse.ok) {
         const errorBody = await difyResponse.text();
@@ -1160,16 +1193,26 @@ export async function createApp(options = {}) {
     try {
       const runtime = db.getRuntimeSnapshot(req.auth.workspace.id);
       const outputDir = path.join(llmWikiDir, req.auth.workspace.id);
-      await fs.rm(outputDir, { recursive: true, force: true });
+      const tmpDir = path.join(llmWikiDir, `${req.auth.workspace.id}.tmp.${Date.now()}`);
 
-      const result = await exportRuntimeToLlmWiki({
-        outputDir,
-        workspace: {
-          id: req.auth.workspace.id,
-          name: req.auth.workspace.name,
-        },
-        runtime,
-      });
+      let result;
+      try {
+        result = await exportRuntimeToLlmWiki({
+          outputDir: tmpDir,
+          workspace: {
+            id: req.auth.workspace.id,
+            name: req.auth.workspace.name,
+          },
+          runtime,
+        });
+
+        // 原子替换
+        try { await fs.rm(outputDir, { recursive: true, force: true }); } catch {}
+        await fs.rename(tmpDir, outputDir);
+      } catch (innerError) {
+        try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
+        throw innerError;
+      }
 
       res.status(201).json({
         pageCount: result.pageCount,
@@ -1216,9 +1259,18 @@ export async function createApp(options = {}) {
         return;
       }
     }
-    res.status(500).json({
-      error: error.message || "Internal server error.",
-    });
+
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Unhandled server error:", error);
+      res.status(500).json({
+        error: error.message || "Internal server error.",
+      });
+    } else {
+      console.error("Unhandled server error:", error.message);
+      res.status(500).json({
+        error: "Internal server error. Please try again later.",
+      });
+    }
   });
 
   return app;

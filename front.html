@@ -714,7 +714,7 @@ let currentUser=null,currentWorkspace=null,authMode='login';
 function $(id){return document.getElementById(id)}
 function toast(t){
   const el=$('toast');
-  el.innerHTML=t;
+  el.textContent=t;
   el.classList.add('show');
   clearTimeout(window.__t);
   window.__t=setTimeout(()=>el.classList.remove('show'),2400);
@@ -777,6 +777,19 @@ function focusCount(){
 function highWeightCount(){return ontoNodes.filter(n=>(n.expertWeight||1)>=4).length}
 function esc(s){
   return String(s||'').replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
+}
+function safeUrl(url) {
+  if (!url) return "#";
+  const lower = String(url).trim().toLowerCase();
+  // 拒绝 javascript: 和 data: 协议
+  if (lower.startsWith("javascript:") || lower.startsWith("data:")) {
+    return "#";
+  }
+  // 只允许 http/https/相对路径
+  if (lower.startsWith("http://") || lower.startsWith("https://") || !lower.includes(":")) {
+    return url;
+  }
+  return "#";
 }
 function hasAuth(){return !!currentUser}
 function wikiMapFromArray(items){
@@ -2738,7 +2751,7 @@ function renderExportOutput(exports){
               <h3 style="font-size:16px">${esc(item.format.toUpperCase())}</h3>
               <p style="color:var(--muted);margin-top:8px">${esc(item.fileName)}</p>
               <div class="gen-actions" style="margin-top:14px">
-                <a class="btn" href="${esc(item.downloadUrl)}" target="_blank" rel="noreferrer">下载文件</a>
+                <a class="btn" href="${safeUrl(item.downloadUrl)}" target="_blank" rel="noopener noreferrer">下载文件</a>
               </div>
             </div>
           `).join('')}

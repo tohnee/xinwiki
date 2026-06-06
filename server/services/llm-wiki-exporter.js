@@ -113,6 +113,23 @@ export async function exportWorkspaceToLlmWiki({
   };
 }
 
+// ── YAML safe helpers ────────────────────────────────────────────────────────
+
+function yamlSafeValue(value) {
+  const str = String(value || "");
+  // Quote if contains special YAML chars
+  if (/[:\n\r'"#&*!|>%@`{}\[\],?=\-]/.test(str) || str !== str.trim()) {
+    // Use double-quoted style with escape
+    return JSON.stringify(str);
+  }
+  return str || '""';
+}
+
+function yamlSafeFlowList(items) {
+  if (!items || !items.length) return "[]";
+  return "[" + items.map(item => JSON.stringify(String(item))).join(", ") + "]";
+}
+
 // ── Runtime projection exporter ───────────────────────────────────────────────
 
 function buildRuntimeEntryTitleMap(entries) {
@@ -125,40 +142,41 @@ function buildRuntimeEntryTitleMap(entries) {
 
 function buildRuntimeFrontmatter(entry, relatedTitles) {
   const timestamp = entry.updatedAt || nowIso();
-  const aliases = (entry.aliases || [])
+  const aliasesArr = Array.from(new Set(entry.aliases || []))
     .filter((alias) => alias !== entry.title)
     .slice(0, 5);
 
-  const tagList = [
-    "xinwiki",
-    entry.kind.toLowerCase(),
-    ...(entry.tags || []),
-  ].slice(0, 10);
-
-  const sourcePath = entry.sourceRefs?.[0]?.sourceId || "unknown";
-
-  return `---
-title: ${entry.title}
-aliases:
-${aliases.map((alias) => `  - ${alias}`).join("\n") || "  - " + entry.title}
-tags:
-${tagList.map((tag) => `  - ${tag}`).join("\n")}
-tier: semantic
-source_type: xinwiki-export
-source_path: ${sourcePath}
-entity_type: ${entry.kind}
-created: ${timestamp}
-modified: ${timestamp}
-related:
-${relatedTitles.map((title) => `  - "[[${title}]]"`).join("\n") || "  - "}
-supersedes: []
-confidence:
-  value: 0.82
-  last_evaluated: ${timestamp}
-  source_date: ${timestamp}
-  corroborations: ${Math.max(1, relatedTitles.length)}
-  disputed: false
----`;
+  const lines = [
+    "---",
+    `title: ${yamlSafeValue(entry.title)}`,
+    "aliases:",
+    ...(aliasesArr.length
+      ? aliasesArr.map((alias) => `  - ${yamlSafeValue(alias)}`)
+      : [`  - ${yamlSafeValue(entry.title)}`]),
+    "tags:",
+    ...((entry.tags && entry.tags.length ? entry.tags : ["xinwiki"])
+      .map((tag) => `  - ${yamlSafeValue(tag)}`)
+      .slice(0, 10)),
+    `tier: ${yamlSafeValue(entry.kind === "page" ? "semantic" : "procedural")}`,
+    `source_type: xinwiki-runtime-export`,
+    `source_path: ${yamlSafeValue(entry.sourceRefs?.[0]?.sourceId || "unknown")}`,
+    `entity_type: ${yamlSafeValue(entry.kind)}`,
+    `created: ${timestamp}`,
+    `modified: ${timestamp}`,
+    "related:",
+    ...(relatedTitles.length
+      ? relatedTitles.map((title) => `  - "[[${String(title).replace(/"/g, '\\"')}]]"`)
+      : ["  - "]),
+    "supersedes: []",
+    "confidence:",
+    `  value: 0.82`,
+    `  last_evaluated: ${timestamp}`,
+    `  source_date: ${timestamp}`,
+    `  corroborations: ${Math.max(1, relatedTitles.length)}`,
+    `  disputed: false`,
+    "---",
+  ];
+  return lines.join("\n");
 }
 
 export async function exportRuntimeToLlmWiki({
@@ -189,6 +207,8 @@ export async function exportRuntimeToLlmWiki({
   }
 
   // Write wiki markdown pages
+  const usedNames = new Set();
+
   for (const entry of activeEntries) {
     const relations = entryRelations.get(entry.id) || [];
     const relatedTitles = [...new Set(relations.map((r) => r.toTitle))].slice(0, 12);
@@ -214,8 +234,24 @@ export async function exportRuntimeToLlmWiki({
       ...relationsSection,
     ].join("\n");
 
+    let baseName = wikiFileName(entry.title);
+    // 拒绝路径穿越
+    if (baseName.includes("..") || baseName.includes("/") || baseName.includes("\\") || baseName.includes("\0")) {
+      baseName = "untitled";
+    }
+    if (!baseName) baseName = "untitled";
+
+    // 处理 slug 撞名
+    let fileName = `${baseName}.md`;
+    let counter = 1;
+    while (usedNames.has(fileName)) {
+      fileName = `${baseName}-${counter}.md`;
+      counter++;
+    }
+    usedNames.add(fileName);
+
     await fs.writeFile(
-      path.join(wikiDir, `${wikiFileName(entry.title)}.md`),
+      path.join(wikiDir, fileName),
       content,
       "utf8",
     );
