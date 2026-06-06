@@ -1,0 +1,278 @@
+function normalizeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function stripMarkdown(value) {
+  return normalizeText(
+    String(value || "")
+      .replace(/[`*_>#-]+/g, " ")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1"),
+  );
+}
+
+function buildSearchTerms(query) {
+  const normalized = normalizeText(query).toLowerCase();
+  if (!normalized) {
+    return [];
+  }
+
+  const sanitized = normalized.replace(/[，。！？?!；;:：/]/g, " ").trim();
+  const terms = new Set([sanitized]);
+  const trimmedQuestion = sanitized
+    .replace(/(是什么呢|是什么样的|是什么|是啥|有哪些|多少|吗|么|呢)$/u, "")
+    .trim();
+
+  if (trimmedQuestion) {
+    terms.add(trimmedQuestion);
+  }
+
+  for (const token of sanitized.split(/\s+/)) {
+    if (token.length >= 2) {
+      terms.add(token);
+    }
+  }
+
+  return Array.from(terms).filter(Boolean);
+}
+
+function scoreSearchText(text, query) {
+  const searchable = normalizeText(text).toLowerCase();
+  const terms = buildSearchTerms(query);
+  if (!searchable || !terms.length) {
+    return 0;
+  }
+
+  return terms.reduce((score, term, index) => {
+    if (!term || !searchable.includes(term)) {
+      return score;
+    }
+    return score + (index === 0 ? 5 : 1);
+  }, 0);
+}
+
+function buildExcerpt(text, query) {
+  const source = stripMarkdown(text);
+  if (!source) {
+    return "";
+  }
+
+  const terms = buildSearchTerms(query);
+  const match = terms.find((term) => source.toLowerCase().includes(term));
+  if (!match) {
+    return source.slice(0, 180);
+  }
+
+  const loweredSource = source.toLowerCase();
+  const matchIndex = loweredSource.indexOf(match);
+  const start = Math.max(0, matchIndex - 60);
+  const end = Math.min(source.length, matchIndex + match.length + 80);
+  return source.slice(start, end);
+}
+
+function collectEntryText(entry) {
+  return [
+    entry.title,
+    entry.summary,
+    stripMarkdown(entry.bodyMarkdown),
+    ...(entry.aliases || []),
+    ...(entry.tags || []),
+    ...(entry.sourceRefs || []).flatMap((ref) => [
+      ref.sourceId,
+      ref.excerpt,
+      ref.locator?.sectionHeading,
+    ]),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function dedupeEvidence(records) {
+  const seen = new Set();
+  const result = [];
+
+  for (const record of records) {
+    if (!record) {
+      continue;
+    }
+
+    const key = JSON.stringify([
+      record.ownerType || null,
+      record.ownerId || null,
+      record.role || null,
+      record.sourceId || null,
+      record.excerpt || null,
+      record.locator || null,
+    ]);
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(record);
+  }
+
+  return result;
+}
+
+function mapRuntimeEntry(entry, query) {
+  const baseScore = scoreSearchText(collectEntryText(entry), query);
+  if (baseScore <= 0) {
+    return null;
+  }
+
+  return {
+    id: entry.id,
+    kind: entry.kind,
+    title: entry.title,
+    summary: entry.summary,
+    excerpt: buildExcerpt(collectEntryText(entry), query),
+    // Prefer page-level evidence so query/chat ground on the canonical page entry.
+    score: baseScore + (entry.kind === "page" ? 2 : 0),
+    status: entry.status,
+    sourceRefs: entry.sourceRefs || [],
+  };
+}
+
+function mapRuntimeRelation(edge, entryMap, query) {
+  const fromTitle = entryMap.get(edge.fromEntryId)?.title || edge.fromEntryId;
+  const toTitle = entryMap.get(edge.toEntryId)?.title || edge.toEntryId;
+  const searchable = [
+    fromTitle,
+    edge.type,
+    toTitle,
+    ...(edge.evidenceRefs || []).map((ref) => ref.excerpt),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    id: edge.id || `${edge.fromEntryId}::${edge.type}::${edge.toEntryId}`,
+    fromEntryId: edge.fromEntryId,
+    fromTitle,
+    toEntryId: edge.toEntryId,
+    toTitle,
+    type: edge.type,
+    score: scoreSearchText(searchable, query),
+    evidenceRefs: edge.evidenceRefs || [],
+  };
+}
+
+export function queryRuntimeSnapshot({ snapshot = {}, query }) {
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) {
+    return {
+      query: "",
+      entries: [],
+      relations: [],
+      evidence: [],
+      pages: [],
+      graph: [],
+    };
+  }
+
+  const activeEntries = (snapshot.entries || []).filter((entry) => entry.status !== "superseded");
+  const entryMap = new Map(activeEntries.map((entry) => [entry.id, entry]));
+  const entries = activeEntries
+    .map((entry) => mapRuntimeEntry(entry, normalizedQuery))
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 5);
+
+  const matchedEntryIds = new Set(entries.map((entry) => entry.id));
+  const relations = (snapshot.edges || [])
+    .map((edge) => mapRuntimeRelation(edge, entryMap, normalizedQuery))
+    .filter((edge) =>
+      matchedEntryIds.has(edge.fromEntryId)
+      || matchedEntryIds.has(edge.toEntryId)
+      || edge.score > 0
+    )
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 5);
+
+  const evidence = dedupeEvidence([
+    ...entries.flatMap((entry) => (entry.sourceRefs || []).map((ref) => ({
+      ...ref,
+      ownerType: "entry",
+      ownerId: entry.id,
+      role: "sourceRef",
+    }))),
+    ...relations.flatMap((edge) => (edge.evidenceRefs || []).map((ref) => ({
+      ...ref,
+      ownerType: "edge",
+      ownerId: edge.id,
+      role: "evidenceRef",
+    }))),
+  ]);
+
+  return {
+    query: normalizedQuery,
+    entries,
+    relations: relations.map((edge) => ({
+      id: edge.id,
+      fromEntryId: edge.fromEntryId,
+      fromTitle: edge.fromTitle,
+      toEntryId: edge.toEntryId,
+      toTitle: edge.toTitle,
+      type: edge.type,
+      score: edge.score,
+      evidenceRefs: edge.evidenceRefs,
+    })),
+    evidence,
+    pages: entries
+      .filter((entry) => entry.kind === "page")
+      .map((entry) => ({
+        title: entry.title,
+        source: entry.source || null,
+        excerpt: entry.excerpt,
+        score: entry.score,
+      })),
+    graph: entries
+      .filter((entry) => entry.kind !== "page")
+      .map((entry) => ({
+        id: entry.title,
+        type: entry.kind,
+        excerpt: entry.excerpt,
+        score: entry.score,
+      })),
+  };
+}
+
+export function buildGroundedAnswerFromQuery(queryResult, question) {
+  const entries = Array.isArray(queryResult?.entries) ? queryResult.entries : [];
+  if (!entries.length) {
+    return {
+      canAnswer: false,
+      answer:
+        "当前没有足够的意图级证据来回答这个问题。按照 grounded-only 规则，我会拒绝回答；"
+        + "请先补充相关来源、Wiki 或明确包含该问题意图的文档证据。",
+      citations: [],
+      context: "",
+    };
+  }
+
+  const preferredEntries = [
+    ...entries.filter((entry) => entry.kind === "page"),
+    ...entries.filter((entry) => entry.kind !== "page"),
+  ];
+  const topEntry = preferredEntries[0];
+  const citations = preferredEntries.slice(0, 3).map((entry) => `${entry.kind}:${entry.title}`);
+  const relationContext = (queryResult.relations || [])
+    .slice(0, 3)
+    .map((relation) => `${relation.fromTitle} -${relation.type}-> ${relation.toTitle}`)
+    .join("\n");
+
+  return {
+    canAnswer: true,
+    answer: `根据当前工作空间 runtime 检索结果，${topEntry.title} 与“${question}”最相关。${topEntry.excerpt || topEntry.summary}`,
+    citations,
+    context: [
+      ...preferredEntries
+        .slice(0, 3)
+        .map((entry) => `[${entry.kind}] ${entry.title}: ${entry.excerpt || entry.summary}`),
+      relationContext ? `[relations]\n${relationContext}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  };
+}

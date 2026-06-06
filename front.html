@@ -1,0 +1,2804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>XinWiki · 工作空间 Wiki 知识分析系统</title>
+<style>
+:root{
+  --bg:#fbfcfe;--bg-soft:#f4f6fb;--ink:#1a1d24;--muted:#697086;--faint:#9aa1b4;
+  --line:#e9ecf3;--line2:#dfe3ee;--panel:#fff;
+  --indigo:#5b6ef5;--indigo-soft:#eef0ff;--violet:#8b5cf6;--violet-soft:#f3edff;
+  --sky:#38bdf8;--sky-soft:#e8f7ff;--teal:#2dd4bf;--teal-soft:#e4fbf6;
+  --amber:#f59e0b;--amber-soft:#fff4e0;--rose:#fb7185;--rose-soft:#ffeef1;
+  --emerald:#34d399;--emerald-soft:#e6faf0;--graph:#0b0e17;
+  --shadow:0 24px 60px rgba(40,46,80,.10);--shadow-sm:0 8px 28px rgba(40,46,80,.07);
+  --glow:0 0 40px rgba(91,110,245,.25);
+  --mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --radius:18px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--sans);color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(1100px 600px at 88% -8%,rgba(139,92,246,.10),transparent 60%),
+    radial-gradient(900px 500px at 6% -6%,rgba(56,189,248,.10),transparent 58%),
+    radial-gradient(800px 600px at 50% 120%,rgba(45,212,191,.08),transparent 55%),
+    var(--bg);
+}
+button,input,textarea,select{font-family:inherit;font-size:inherit}
+button{cursor:pointer;border:none;background:none}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#d4d9e6;border-radius:99px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#bcc3d6;background-clip:content-box}
+
+.app{height:100vh;display:grid;grid-template-rows:68px 1fr}
+.topbar{
+  display:flex;align-items:center;gap:18px;padding:0 26px;
+  background:rgba(255,255,255,.72);backdrop-filter:blur(20px);border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:240px}
+.logo{
+  width:38px;height:38px;border-radius:12px;position:relative;
+  background:linear-gradient(135deg,var(--indigo),var(--violet) 55%,var(--sky));box-shadow:var(--glow);
+}
+.logo:before{
+  content:"";position:absolute;inset:0;border-radius:12px;
+  background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.55),transparent 50%);
+}
+.logo:after{
+  content:"";position:absolute;left:50%;top:50%;width:14px;height:14px;transform:translate(-50%,-50%);
+  border:2px solid rgba(255,255,255,.92);border-radius:50%;
+}
+.brand-title b{font-size:16px;font-weight:680;letter-spacing:-.02em;display:block;line-height:1.1}
+.brand-title small{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.04em}
+
+.search{flex:1;max-width:540px;position:relative}
+.search input{
+  width:100%;border:1px solid var(--line2);background:var(--bg-soft);border-radius:14px;
+  padding:11px 44px 11px 40px;outline:none;color:var(--ink);font-size:13px;transition:.2s;
+}
+.search input:focus{border-color:var(--indigo);background:#fff;box-shadow:0 0 0 4px rgba(91,110,245,.10)}
+.search .ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--faint);font-size:15px}
+.search .kbd{
+  position:absolute;right:12px;top:50%;transform:translateY(-50%);
+  font-family:var(--mono);font-size:10px;color:var(--faint);border:1px solid var(--line2);border-radius:6px;padding:2px 6px;
+}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
+.pill{
+  display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);
+  background:var(--bg-soft);border:1px solid var(--line);border-radius:99px;padding:8px 12px;
+}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 8px var(--emerald)}
+
+.main{display:grid;grid-template-columns:84px 320px 1fr;min-height:0}
+.rail{padding:18px 12px;display:flex;flex-direction:column;gap:8px;border-right:1px solid var(--line)}
+.nav-btn{
+  height:60px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  color:var(--faint);transition:.2s;
+}
+.nav-btn svg{width:21px;height:21px}
+.nav-btn span{font-size:11px;font-weight:550}
+.nav-btn:hover{background:#fff;box-shadow:var(--shadow-sm);color:var(--muted)}
+.nav-btn.active{background:linear-gradient(160deg,var(--indigo),var(--violet));color:#fff;box-shadow:0 12px 28px rgba(91,110,245,.32)}
+
+.left{border-right:1px solid var(--line);background:rgba(255,255,255,.55);overflow:auto;backdrop-filter:blur(10px)}
+.left-head{
+  padding:22px 22px 16px;position:sticky;top:0;z-index:5;background:rgba(255,255,255,.82);
+  backdrop-filter:blur(14px);border-bottom:1px solid var(--line);
+}
+.left-head h3{font-size:18px;letter-spacing:-.02em}
+.left-head p{font-size:11px;color:var(--faint);margin-top:4px;font-family:var(--mono)}
+.left-body{padding:16px}
+
+.stage{overflow:auto;min-width:0}
+.stage-inner{max-width:1240px;margin:0 auto;padding:34px 44px 90px}
+.view{display:none}
+.view.active{display:block;animation:fade .3s ease}
+@keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.page-title{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:26px}
+.page-title h1{font-size:32px;letter-spacing:-.035em;line-height:1.1;font-weight:680}
+.page-title .lead{color:var(--muted);margin-top:10px;font-size:14px;max-width:860px;line-height:1.65}
+.section{margin-top:28px}
+.section h2{
+  font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:14px;
+  display:flex;align-items:center;gap:12px;font-family:var(--mono);
+}
+.section h2:after{content:"";height:1px;background:var(--line);flex:1}
+
+.card{background:rgba(255,255,255,.86);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
+.card.pad{padding:22px}
+.grid{display:grid;gap:16px}
+.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1180px){
+  .main{grid-template-columns:80px 280px 1fr}
+  .grid.two,.grid.three,.grid.four{grid-template-columns:1fr}
+}
+
+.tag-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tag{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:99px;
+  background:var(--bg-soft);border:1px solid var(--line);color:var(--muted);font-size:12px;
+}
+.tag.indigo{background:var(--indigo-soft);border-color:#d8ddff;color:var(--indigo)}
+.tag.violet{background:var(--violet-soft);border-color:#e2d6ff;color:var(--violet)}
+.tag.teal{background:var(--teal-soft);border-color:#c6f3ea;color:#0d9488}
+.tag.amber{background:var(--amber-soft);border-color:#fbe3b3;color:#b45309}
+.tag.rose{background:var(--rose-soft);border-color:#ffd2da;color:#be123c}
+.tag.emerald{background:var(--emerald-soft);border-color:#c4f1da;color:#059669}
+.tag.dark{background:#13182a;border-color:#23293f;color:#a9b4ff}
+
+.btn{
+  background:linear-gradient(160deg,var(--indigo),var(--violet));color:#fff;border-radius:12px;padding:10px 16px;
+  font-weight:600;font-size:13px;box-shadow:0 10px 22px rgba(91,110,245,.25);transition:.18s;
+}
+.btn:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(91,110,245,.32)}
+.btn.secondary{background:#fff;color:var(--muted);border:1px solid var(--line2);box-shadow:none}
+.btn.secondary:hover{border-color:var(--indigo);color:var(--indigo);box-shadow:none}
+.btn.ghost{background:transparent;color:var(--indigo);box-shadow:none;border:1px solid #d4daff}
+.btn.teal{background:linear-gradient(160deg,var(--teal),#0ea5e9)}
+.btn.rose{background:linear-gradient(160deg,var(--rose),#f97316)}
+.btn.sm{padding:7px 12px;font-size:12px;border-radius:10px}
+
+.file-card,.wiki-item,.entity-card,.proc-card{
+  padding:15px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.7);margin-bottom:11px;transition:.18s;
+}
+.file-card,.wiki-item,.entity-card{cursor:pointer}
+.file-card:hover,.wiki-item:hover,.entity-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm);border-color:var(--line2)}
+.file-card.active,.wiki-item.active,.entity-card.active{border-color:var(--indigo);background:var(--indigo-soft)}
+.file-top{display:flex;align-items:center;gap:11px}
+.file-icon{
+  width:36px;height:36px;border-radius:11px;background:linear-gradient(150deg,var(--indigo-soft),var(--violet-soft));
+  color:var(--indigo);display:grid;place-items:center;flex:none;
+}
+.file-icon svg{width:18px;height:18px}
+.file-name{font-weight:600;font-size:13px;line-height:1.35}
+.file-meta{margin-top:9px;display:flex;gap:6px;flex-wrap:wrap}
+.mini{
+  font-family:var(--mono);font-size:10px;padding:3px 7px;border-radius:7px;
+  background:var(--bg-soft);border:1px solid var(--line);color:var(--faint);
+}
+.progress{height:6px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:12px}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--indigo),var(--teal));border-radius:99px}
+
+table{width:100%;border-collapse:collapse}
+th,td{padding:12px;border-bottom:1px solid var(--line);font-size:13px;text-align:left;vertical-align:top}
+th{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;font-family:var(--mono)}
+
+.kpi{
+  padding:20px;border-radius:var(--radius);border:1px solid var(--line);
+  background:linear-gradient(170deg,#fff,var(--bg-soft));position:relative;overflow:hidden;
+}
+.kpi:before{
+  content:"";position:absolute;right:-30px;top:-30px;width:90px;height:90px;border-radius:50%;
+  background:radial-gradient(circle,rgba(91,110,245,.12),transparent 70%);
+}
+.kpi .val{
+  font-size:28px;font-weight:720;letter-spacing:-.03em;
+  background:linear-gradient(120deg,var(--indigo),var(--violet));
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+.kpi .label{font-size:12px;color:var(--muted);margin-top:6px}
+
+.upload-zone{
+  border:1.5px dashed var(--line2);border-radius:16px;background:rgba(255,255,255,.6);
+  padding:22px;text-align:center;cursor:pointer;margin-bottom:16px;transition:.2s;
+}
+.upload-zone:hover{border-color:var(--indigo);background:var(--indigo-soft)}
+.upload-zone .uz-ic{font-size:26px;color:var(--indigo);margin-bottom:8px}
+.upload-zone b{font-size:13px}
+.upload-zone p{font-size:11px;color:var(--faint);font-family:var(--mono);margin-top:5px}
+
+.proc-card{overflow:hidden}
+.pc-top{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.pc-ft{font-family:var(--mono);font-size:9px;padding:3px 7px;border-radius:6px;background:#13182a;color:#a9b4ff}
+.pc-name{font-size:12px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-state{font-family:var(--mono);font-size:10px;color:var(--indigo)}
+.stages{display:flex;align-items:flex-start;margin-top:6px}
+.stg{flex:1;text-align:center;position:relative}
+.stg:not(:last-child):after{content:"";position:absolute;top:10px;left:50%;right:-50%;height:2px;background:var(--line2);z-index:1}
+.stg.done:not(:last-child):after{background:linear-gradient(90deg,var(--indigo),var(--teal))}
+.ring{
+  width:21px;height:21px;border-radius:50%;border:2px solid var(--line2);background:#fff;margin:0 auto 6px;
+  display:grid;place-items:center;font-size:10px;color:var(--faint);position:relative;z-index:2;
+}
+.stg.done .ring{border-color:var(--teal);background:var(--teal);color:#fff}
+.stg.active .ring{border-color:var(--indigo);color:var(--indigo);animation:pulse 1.1s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(91,110,245,.3)}70%{box-shadow:0 0 0 9px rgba(91,110,245,0)}100%{box-shadow:0 0 0 0 rgba(91,110,245,0)}}
+.stg .lbl{font-family:var(--mono);font-size:8px;color:var(--faint);line-height:1.3}
+.build-wiki{width:100%;margin-top:14px;display:none}
+.build-wiki.show{display:block}
+
+.parse-step{display:flex;align-items:flex-start;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+.step-dot{width:26px;height:26px;border-radius:50%;background:var(--teal-soft);color:#0d9488;display:grid;place-items:center;font-size:13px;flex:none}
+.step-text b{font-size:13px}
+.step-text p{font-size:12px;color:var(--faint);margin-top:3px;line-height:1.5}
+.source-layout{display:grid;grid-template-columns:1fr 360px;gap:18px}
+@media(max-width:1180px){.source-layout{grid-template-columns:1fr}}
+.source-hero{
+  border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(170deg,#fff,var(--bg-soft));
+  padding:30px;text-align:center;position:relative;overflow:hidden;
+}
+.source-hero:before{content:"";position:absolute;inset:0;background:radial-gradient(400px 200px at 50% 0,rgba(139,92,246,.10),transparent 70%)}
+.source-hero svg{width:40px;height:40px;color:var(--indigo);margin-bottom:10px;position:relative}
+.source-hero h3{font-size:18px;position:relative}
+.source-hero p{color:var(--muted);font-size:13px;margin-top:6px;position:relative}
+.wiki-md h3{font-size:16px;margin:18px 0 8px}
+.wiki-md ul{margin:0 0 4px 20px}
+.wiki-md li{font-size:14px;color:var(--muted);line-height:1.8}
+.entity-chip{
+  display:inline-flex;align-items:center;gap:7px;margin:4px 6px 4px 0;padding:7px 12px;border-radius:99px;
+  border:1px solid var(--line);background:#fff;font-size:12px;color:var(--muted);
+}
+.entity-chip i{width:8px;height:8px;border-radius:50%}
+
+.ontology-wrap{
+  height:620px;position:relative;overflow:hidden;border-radius:22px;border:1px solid #1c2336;
+  background:
+    radial-gradient(circle at 50% 40%,rgba(91,110,245,.10),transparent 60%),
+    linear-gradient(rgba(120,140,255,.04) 1px,transparent 1px) 0 0/36px 36px,
+    linear-gradient(90deg,rgba(120,140,255,.04) 1px,transparent 1px) 0 0/36px 36px,
+    var(--graph);
+  box-shadow:0 30px 70px rgba(8,12,22,.30);
+}
+#ontoSvg{width:100%;height:100%}
+.onto-panel,.onto-detail{
+  position:absolute;background:rgba(17,21,32,.82);border:1px solid #262d44;border-radius:18px;
+  box-shadow:0 20px 50px rgba(0,0,0,.4);padding:18px;color:#dfe4f5;backdrop-filter:blur(14px);
+}
+.onto-panel{right:18px;top:18px;width:280px}
+.onto-detail{left:18px;bottom:18px;width:340px}
+.onto-panel h3,.onto-detail h3{font-size:15px}
+.onto-panel p,.onto-detail p{font-size:12px;color:#9aa2c0;margin-top:6px;line-height:1.55}
+.node-label{font-family:var(--mono);font-size:11px;fill:#eef0ff;font-weight:700}
+.node-type{font-family:var(--mono);font-size:8.5px;fill:#9aa6cc}
+.edge-label{font-family:var(--mono);font-size:9px;fill:#7d88b5}
+
+.expert-layout{display:grid;grid-template-columns:1fr 380px;gap:18px}
+@media(max-width:1180px){.expert-layout{grid-template-columns:1fr}}
+.expert-card{border:1px solid var(--line);border-radius:16px;background:#fff;padding:16px}
+.expert-card select,.expert-card textarea,.expert-card input{
+  width:100%;border:1px solid var(--line2);border-radius:12px;padding:11px;background:var(--bg-soft);outline:none;margin-top:8px;
+}
+.expert-card textarea{min-height:96px;resize:vertical}
+.expert-badge{
+  display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;
+  border-radius:999px;padding:4px 8px;background:#13182a;color:#a9b4ff;
+}
+.weight-bar{height:7px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:8px}
+.weight-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--indigo),var(--teal))}
+
+.focus-group{margin-bottom:18px}
+.focus-group h4{font-size:12px;font-family:var(--mono);color:var(--muted);margin-bottom:10px;letter-spacing:.04em}
+.focus-item{
+  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:11px;border:1px solid var(--line);
+  background:#fff;margin-bottom:7px;cursor:pointer;transition:.16s;
+}
+.focus-item:hover{border-color:var(--indigo)}
+.focus-item.on{background:var(--indigo-soft);border-color:#cdd4ff}
+.chk{
+  width:18px;height:18px;border-radius:6px;border:1.5px solid var(--line2);display:grid;place-items:center;
+  flex:none;transition:.16s;color:#fff;font-size:11px;
+}
+.focus-item.on .chk{background:var(--indigo);border-color:var(--indigo)}
+.focus-item .fname{font-size:13px;flex:1}
+
+.ask-layout{display:grid;grid-template-columns:1fr 360px;gap:18px}
+@media(max-width:1180px){.ask-layout{grid-template-columns:1fr}}
+.chat-shell{
+  background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);
+  min-height:640px;display:flex;flex-direction:column;overflow:hidden;
+}
+.chat-head{
+  padding:18px 20px;border-bottom:1px solid var(--line);background:linear-gradient(170deg,var(--bg-soft),#fff);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.chat-body{flex:1;padding:24px;overflow:auto;display:flex;flex-direction:column;gap:16px}
+.msg{max-width:88%;padding:14px 16px;border-radius:18px;font-size:14px;line-height:1.7}
+.msg.user{align-self:flex-end;background:linear-gradient(160deg,var(--indigo),var(--violet));color:#fff;border-bottom-right-radius:6px}
+.msg.ai{align-self:flex-start;background:var(--bg-soft);border:1px solid var(--line);border-bottom-left-radius:6px}
+.msg.refuse{align-self:flex-start;background:var(--rose-soft);border:1px solid #ffd2da;color:#7f1d1d;border-bottom-left-radius:6px}
+.msg .cite{display:inline-flex;margin-top:9px;font-size:11px;color:var(--indigo);font-family:var(--mono)}
+.msg.refuse .cite{color:#be123c}
+.chat-input{padding:16px;border-top:1px solid var(--line);display:flex;gap:10px;background:#fff}
+.chat-input input{flex:1;border:1px solid var(--line2);border-radius:99px;padding:13px 18px;outline:none;background:var(--bg-soft)}
+.chat-input input:focus{border-color:var(--indigo);background:#fff}
+.side-tool{display:flex;flex-direction:column;gap:16px}
+.side-tool textarea{
+  width:100%;min-height:88px;resize:vertical;border:1px solid var(--line2);border-radius:12px;
+  padding:12px;background:var(--bg-soft);outline:none;color:var(--ink);font-size:13px;
+}
+.side-tool textarea:focus{border-color:var(--indigo);background:#fff}
+.side-tool select{width:100%;border:1px solid var(--line2);border-radius:11px;padding:11px;margin-top:8px;background:var(--bg-soft);outline:none}
+.timeline{border-left:2px solid var(--line2);margin-left:6px;padding-left:18px}
+.tl{position:relative;margin-bottom:16px}
+.tl:before{
+  content:"";position:absolute;left:-25px;top:4px;width:11px;height:11px;border-radius:50%;
+  background:linear-gradient(var(--indigo),var(--violet));box-shadow:0 0 0 4px rgba(91,110,245,.12);
+}
+.tl time{font-family:var(--mono);font-size:11px;color:var(--indigo)}
+.tl p{font-size:12px;color:var(--muted);line-height:1.55;margin-top:4px}
+
+.scope-box,.chart-boxes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media(max-width:1180px){.scope-box,.chart-boxes{grid-template-columns:repeat(2,1fr)}}
+.scope,.chart-choice{
+  padding:16px;border:1px solid var(--line);border-radius:14px;background:#fff;cursor:pointer;transition:.18s;
+}
+.scope:hover,.scope.active,.chart-choice:hover,.chart-choice.active{background:var(--indigo-soft);border-color:#cdd4ff}
+.scope b,.chart-choice b{font-size:14px}
+.scope p,.chart-choice p{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+.report-types{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:1180px){.report-types{grid-template-columns:1fr}}
+.rt-card{
+  padding:16px;border:1px solid var(--line);border-radius:14px;background:#fff;cursor:pointer;transition:.18s;
+  display:flex;gap:12px;align-items:flex-start;
+}
+.rt-card:hover,.rt-card.active{border-color:var(--indigo);background:var(--indigo-soft)}
+.rt-ic{
+  width:34px;height:34px;border-radius:10px;background:linear-gradient(150deg,var(--violet-soft),var(--sky-soft));
+  color:var(--violet);display:grid;place-items:center;flex:none;font-size:17px;
+}
+.rt-card b{font-size:14px}
+.rt-card p{font-size:12px;color:var(--muted);margin-top:4px}
+.model-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.model-pill{
+  border:1px solid var(--line2);background:#fff;border-radius:99px;padding:8px 13px;color:var(--muted);
+  font-size:12px;cursor:pointer;font-family:var(--mono);transition:.16s;
+}
+.model-pill.active{background:#13182a;color:#a9b4ff;border-color:#23293f}
+.gen-actions{display:flex;gap:10px;flex-wrap:wrap}
+.output{margin-top:20px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:var(--shadow);overflow:hidden}
+.output-head{
+  padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(170deg,var(--bg-soft),#fff);gap:16px;
+}
+.output-body{padding:24px}
+.chart-card{
+  border:1px solid var(--line);border-radius:16px;background:linear-gradient(170deg,#fff,var(--bg-soft));
+  padding:18px;margin:18px 0;
+}
+.chart-title{font-weight:650;margin-bottom:4px}
+.chart-sub{font-family:var(--mono);font-size:11px;color:var(--faint);margin-bottom:14px}
+.chart-card svg{width:100%;height:auto}
+.axis{font-family:var(--mono);font-size:10px;fill:#8b93ab}
+.bar-label{font-family:var(--mono);font-size:10px;fill:#3a4156}
+.grid-line{stroke:var(--line2);stroke-width:1}
+
+.report-hero{
+  position:relative;overflow:hidden;border-radius:24px;border:1px solid var(--line);
+  background:
+    radial-gradient(520px 260px at 86% 0%,rgba(139,92,246,.16),transparent 68%),
+    radial-gradient(460px 240px at 6% 0%,rgba(56,189,248,.14),transparent 68%),
+    linear-gradient(160deg,#fff,var(--bg-soft));
+  box-shadow:var(--shadow);padding:28px;
+}
+.report-hero h3{font-size:22px;letter-spacing:-.03em}
+.report-hero p{color:var(--muted);line-height:1.75;margin-top:8px;max-width:820px;font-size:14px}
+.report-hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:20px}
+@media(max-width:1180px){.report-hero-grid{grid-template-columns:repeat(2,1fr)}}
+.report-metric{
+  border:1px solid rgba(223,227,238,.9);background:rgba(255,255,255,.72);
+  border-radius:16px;padding:16px;backdrop-filter:blur(12px);
+}
+.report-metric b{
+  display:block;font-size:22px;letter-spacing:-.03em;
+  background:linear-gradient(120deg,var(--indigo),var(--violet));
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+}
+.report-metric span{display:block;margin-top:5px;font-size:12px;color:var(--muted)}
+.chart-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin-top:18px}
+@media(max-width:1180px){.chart-grid{grid-template-columns:1fr}}
+.chart-card.enhanced{position:relative;overflow:hidden;padding:20px}
+.chart-card.enhanced:before{
+  content:"";position:absolute;right:-80px;top:-80px;width:180px;height:180px;border-radius:50%;
+  background:radial-gradient(circle,rgba(91,110,245,.13),transparent 70%);
+}
+.insight-box{
+  border:1px solid var(--line);background:linear-gradient(170deg,#fff,var(--bg-soft));
+  border-radius:16px;padding:16px;
+}
+.insight-box b{font-size:14px}
+.insight-box ul{margin:10px 0 0 18px}
+.insight-box li{color:var(--muted);font-size:12.5px;line-height:1.75}
+.ppt-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+@media(max-width:1180px){.ppt-board{grid-template-columns:1fr}}
+.ppt-slide-card{
+  min-height:190px;border:1px solid var(--line);border-radius:18px;
+  background:radial-gradient(260px 120px at 100% 0,rgba(91,110,245,.10),transparent 70%),linear-gradient(170deg,#fff,var(--bg-soft));
+  padding:18px;position:relative;overflow:hidden;
+}
+.ppt-slide-card:after{
+  content:"";position:absolute;left:18px;right:18px;bottom:16px;height:4px;border-radius:99px;
+  background:linear-gradient(90deg,var(--indigo),var(--violet),var(--teal));opacity:.65;
+}
+.ppt-slide-no{font-family:var(--mono);font-size:10px;color:var(--faint);margin-bottom:10px}
+.ppt-slide-card h4{font-size:16px;letter-spacing:-.02em}
+.ppt-slide-card p{color:var(--muted);font-size:12.5px;line-height:1.7;margin-top:8px}
+.ppt-mini-chart{margin-top:14px;height:54px;display:flex;align-items:end;gap:8px}
+.ppt-mini-chart i{flex:1;border-radius:8px 8px 4px 4px;background:linear-gradient(180deg,var(--indigo),var(--violet));opacity:.82}
+.report-section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 12px}
+.report-section-title h3{font-size:18px;letter-spacing:-.02em}
+.report-section-title span{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.source-footnotes{border-top:1px solid var(--line);margin-top:22px;padding-top:16px}
+.source-footnotes p{font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.7}
+
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+  background:#13182a;color:#fff;border-radius:99px;padding:12px 20px;box-shadow:0 18px 44px rgba(0,0,0,.24);
+  opacity:0;transition:.28s;z-index:100;font-size:13px;
+}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.auth-overlay{
+  position:fixed;inset:0;background:rgba(12,18,34,.48);backdrop-filter:blur(10px);
+  display:none;align-items:center;justify-content:center;z-index:120;
+}
+.auth-overlay.show{display:flex}
+.auth-card{
+  width:min(520px,calc(100vw - 32px));background:rgba(255,255,255,.96);border:1px solid var(--line);
+  border-radius:28px;box-shadow:var(--shadow);padding:26px;
+}
+.auth-card h3{font-size:24px;letter-spacing:-.03em}
+.auth-card p{color:var(--muted);font-size:13px;line-height:1.75;margin-top:8px}
+.auth-grid{display:grid;gap:14px;margin-top:20px}
+.auth-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.auth-field input{
+  width:100%;border:1px solid var(--line2);background:var(--bg-soft);border-radius:14px;
+  padding:12px 14px;outline:none;
+}
+.auth-field input:focus{border-color:var(--indigo);background:#fff;box-shadow:0 0 0 4px rgba(91,110,245,.10)}
+.auth-field.hidden{display:none}
+.auth-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.auth-hint{font-size:12px;color:var(--faint);margin-top:12px}
+.auth-status{font-size:12px;color:var(--muted);margin-top:14px;min-height:18px}
+</style>
+</head>
+
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo"></div>
+      <div class="brand-title">
+        <b>XinWiki</b>
+        <small>workspace wiki based knowledge</small>
+      </div>
+    </div>
+
+    <div class="search">
+      <span class="ic">⌕</span>
+      <input id="searchInput" placeholder="搜索文档 / Wiki / 实体 / 制程… 例如：台积电 / N2 / CoWoS / HBM">
+      <span class="kbd">⌘K</span>
+    </div>
+
+    <div class="top-actions">
+      <div class="pill" id="workspacePill"><span class="dot"></span>XinWiki · 请先登录</div>
+      <button class="btn secondary" id="exportWikiBtn" style="display:none" onclick="exportLlmWiki()">导出 llm-wiki</button>
+      <button class="btn" id="uploadBtn" onclick="openUpload()">＋ 上传文档</button>
+      <button class="btn secondary" id="authActionBtn" style="display:none" onclick="logout()">退出</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <nav class="rail" id="rail"></nav>
+    <aside class="left" id="left"></aside>
+    <section class="stage">
+      <div class="stage-inner">
+        <div class="view active" id="view-sources"></div>
+        <div class="view" id="view-wiki"></div>
+        <div class="view" id="view-ontology"></div>
+        <div class="view" id="view-ask"></div>
+        <div class="view" id="view-generate"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<input type="file" id="fileInput" multiple accept=".md,.markdown,.txt,.html,.htm,.pdf,.doc,.docx,.ppt,.pptx" style="display:none">
+<div class="toast" id="toast"></div>
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-card">
+    <h3 id="authTitle">登录 XinWiki</h3>
+    <p id="authLead">登录后即可访问多用户工作空间、Dify Chatbot 和 llm-wiki 导出。</p>
+    <div class="auth-grid">
+      <div class="auth-field hidden" id="displayNameField">
+        <label for="authDisplayName">显示名称</label>
+        <input id="authDisplayName" placeholder="例如：TC">
+      </div>
+      <div class="auth-field">
+        <label for="authEmail">邮箱</label>
+        <input id="authEmail" type="email" placeholder="you@example.com">
+      </div>
+      <div class="auth-field">
+        <label for="authPassword">密码</label>
+        <input id="authPassword" type="password" placeholder="至少 8 位">
+      </div>
+    </div>
+    <div class="auth-actions">
+      <button class="btn" id="authSubmitBtn" onclick="submitAuth()">登录</button>
+      <button class="btn secondary" id="authSwitchBtn" onclick="toggleAuthMode()">没有账号？去注册</button>
+    </div>
+    <div class="auth-status" id="authStatus"></div>
+    <div class="auth-hint">后端会通过 HttpOnly Cookie 保存会话，Dify 与 llm-wiki 导出均通过后端代理执行。</div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   XinWiki · Workspace Wiki Based Knowledge System
+   完整单文件版本
+   修复：
+   1. 实体命中不等于可回答；
+   2. 严格意图，如营收预测 / 利润 / 估值，必须有意图级证据；
+   3. 没有 Wiki / Source / Ontology 证据时拒答；
+   4. 本体模块支持专家经验注入。
+========================================================= */
+
+const icons={
+  source:`<svg viewBox="0 0 24 24" fill="none"><path d="M6 3h8l4 4v14H6z" stroke="currentColor" stroke-width="1.7"/><path d="M14 3v5h5M8 13h8M8 17h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  wiki:`<svg viewBox="0 0 24 24" fill="none"><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" stroke="currentColor" stroke-width="1.7"/><path d="M8 8h7M8 12h7M8 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  onto:`<svg viewBox="0 0 24 24" fill="none"><circle cx="6" cy="7" r="3" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="7" r="3" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="18" r="3" stroke="currentColor" stroke-width="1.7"/><path d="M9 8h6M8 10l3 5M16 10l-3 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  ask:`<svg viewBox="0 0 24 24" fill="none"><path d="M5 5h14v10H9l-4 4z" stroke="currentColor" stroke-width="1.7"/><path d="M9 9h6M9 12h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  gen:`<svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.3 5.2L20 9l-4.2 4 1 6L12 16.2 7.2 19l1-6L4 9l5.7-.8z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`,
+  pdf:`<svg viewBox="0 0 24 24" fill="none"><path d="M6 3h8l4 4v14H6z" stroke="currentColor" stroke-width="1.6"/><path d="M14 3v5h5M8 16h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`
+};
+
+const NAV=[
+  {id:'sources',label:'来源',icon:icons.source},
+  {id:'wiki',label:'Wiki',icon:icons.wiki},
+  {id:'ontology',label:'本体',icon:icons.onto},
+  {id:'ask',label:'问答',icon:icons.ask},
+  {id:'generate',label:'报告',icon:icons.gen},
+];
+
+let activeNav='sources',activeFile='f1',activeWiki='tsmc',activeNode='台积电';
+let activeScope='wiki',activeModel='deepseek v4 pro',activeChart='roadmap',activeReportType='company';
+let lastAnswer='',lastQuestion='',lastCitations=[],procJobs=[];
+let chatThread=null,chatMessages=[];
+let generatedReportMarkdown='',sourceMarkdownCache={};
+
+let files=[
+  {
+    id:'f1',name:'TSMC_Q4_Earnings_2025.pdf',title:'台积电 2025 Q4 财报与技术路线图',
+    source:'TSMC Investor Relations',date:'2026-01-16',type:'财报 / 投资者材料',size:'612 KB',
+    parsed:true,wikiBuilt:true,progress:100,
+    abstract:'报告披露台积电先进制程进展，N2 进入风险试产并规划量产，CoWoS 先进封装产能持续提升，AI/HPC 客户需求强劲。',
+    facts:[
+      'N2 制程预计 2025 年进入量产，采用 GAA 晶体管结构。',
+      'CoWoS 先进封装产能持续扩张以满足 AI/HPC 需求。',
+      '美国亚利桑那、日本熊本厂区进入扩产阶段。',
+      '主要客户包括 Apple、NVIDIA、AMD、Qualcomm。'
+    ]
+  },
+  {
+    id:'f2',name:'Advanced_Packaging_CoWoS_Report.pdf',title:'先进封装 CoWoS 产业链深度研究',
+    source:'行业研究机构',date:'2025',type:'技术专题报告',size:'48 KB',
+    parsed:true,wikiBuilt:true,progress:100,
+    abstract:'报告梳理 CoWoS 技术定义、与 2.5D/3D 封装关系、产业链结构与主要玩家，指出产能与基板供应是关键瓶颈。',
+    facts:[
+      'CoWoS 是台积电主导的 2.5D 先进封装技术。',
+      'CoWoS 与 AI/HPC 芯片（GPU、HBM 集成）高度相关。',
+      '产业链涉及代工、封装、设备与基板材料供应商。',
+      '产能瓶颈、设备交期、基板供应是主要观察点。'
+    ]
+  }
+];
+
+let wikiPages={
+  tsmc:{
+    id:'tsmc',title:'台积电 / TSMC',source:'TSMC_Q4_Earnings_2025.pdf',type:'Company',
+    summary:'台积电是全球主要晶圆代工企业，业务覆盖先进制程、成熟制程与先进封装。报告期内 N2 进入风险试产，CoWoS 产能持续扩张，AI/HPC 客户需求驱动业绩增长。',
+    sections:[
+      ['相关制程','N3 · N5 · N7 · N2（下一代 GAA 节点）'],
+      ['相关产能','台湾厂区 · 美国亚利桑那 Fab · 日本熊本 Fab'],
+      ['相关客户','Apple · NVIDIA · AMD · Qualcomm'],
+      ['相关技术','GAA · CoWoS · 先进封装'],
+      ['相关事件','N2 风险试产 · Arizona Fab 扩产 · CoWoS 产能提升']
+    ],
+    entities:['台积电','TSMC','N2','N3','N5','CoWoS','GAA','NVIDIA','Apple','AMD','Qualcomm','Arizona Fab'],
+    relations:[
+      ['台积电','operates','Arizona Fab'],
+      ['台积电','usesNode','N2'],
+      ['台积电','usesTechnology','CoWoS'],
+      ['NVIDIA','customerOf','台积电']
+    ]
+  },
+  cowos:{
+    id:'cowos',title:'CoWoS 先进封装',source:'Advanced_Packaging_CoWoS_Report.pdf',type:'Technology',
+    summary:'CoWoS（Chip-on-Wafer-on-Substrate）是台积电主导的 2.5D 先进封装技术，广泛用于 AI/HPC 芯片与 HBM 集成。其产能扩张与基板供应是产业链短期关注重点。',
+    sections:[
+      ['技术定义','2.5D 先进封装，连接逻辑芯片与 HBM'],
+      ['相关技术','2.5D / 3D 封装 · Chiplet · HBM 集成'],
+      ['产业链环节','设计公司 → 代工厂 → 封装厂 → 设备/基板供应商'],
+      ['主要玩家','TSMC · NVIDIA · AMD · Broadcom · OSAT 厂商'],
+      ['关键观察点','产能瓶颈 · 设备交期 · 基板供应 · 客户集中度']
+    ],
+    entities:['CoWoS','HBM','Chiplet','台积电','TSMC','NVIDIA','Broadcom','AMD','OSAT','基板','设备'],
+    relations:[
+      ['CoWoS','usesTechnology','Chiplet'],
+      ['CoWoS','usesTechnology','HBM'],
+      ['CoWoS','relatedToEvent','CoWoS 产能提升'],
+      ['台积电','usesTechnology','CoWoS']
+    ]
+  },
+  n2:{
+    id:'n2',title:'N2 制程节点',source:'TSMC_Q4_Earnings_2025.pdf',type:'ProcessNode',
+    summary:'N2 是台积电下一代先进逻辑制程节点，采用 GAA（Gate-All-Around）晶体管结构，面向高性能计算与 AI 芯片应用，已进入风险试产并规划量产。',
+    sections:[
+      ['技术定位','下一代先进逻辑节点，GAA 结构'],
+      ['时间规划','风险试产 → 量产（2025 规划）'],
+      ['相关技术','GAA · EUV · 先进封装'],
+      ['主要应用','HPC · AI · 高端移动 SoC']
+    ],
+    entities:['N2','GAA','EUV','台积电','TSMC','HPC','AI','SoC'],
+    relations:[
+      ['N2','usesTechnology','GAA'],
+      ['N2','relatedToEvent','N2 量产规划'],
+      ['台积电','usesNode','N2']
+    ]
+  }
+};
+
+let ontoNodes=[
+  {id:'台积电',type:'Company',x:300,y:300,color:'#5b6ef5',wiki:'tsmc',expertWeight:5,expertNote:'晶圆代工与先进封装核心公司，默认高优先级。'},
+  {id:'N2',type:'ProcessNode',x:540,y:200,color:'#38bdf8',wiki:'n2',expertWeight:5,expertNote:'下一代先进节点，专家默认重点关注。'},
+  {id:'CoWoS',type:'Technology',x:560,y:420,color:'#8b5cf6',wiki:'cowos',expertWeight:5,expertNote:'AI/HPC 封装关键平台。'},
+  {id:'GAA',type:'Technology',x:760,y:130,color:'#8b5cf6',wiki:'n2',expertWeight:4,expertNote:'N2 节点关键晶体管结构。'},
+  {id:'HBM',type:'Product',x:780,y:470,color:'#2dd4bf',wiki:'cowos',expertWeight:4,expertNote:'AI 加速器关键存储。'},
+  {id:'NVIDIA',type:'Company',x:290,y:500,color:'#5b6ef5',wiki:'tsmc',expertWeight:4,expertNote:'AI/HPC 需求牵引客户。'},
+  {id:'Arizona Fab',type:'Fab',x:120,y:200,color:'#f59e0b',wiki:'tsmc',expertWeight:3,expertNote:'区域化制造布局相关。'},
+  {id:'EUV 光刻机',type:'Equipment',x:560,y:580,color:'#fb7185',wiki:'n2',expertWeight:3,expertNote:'先进制程关键设备。'},
+  {id:'EUV 光刻胶',type:'Material',x:790,y:300,color:'#34d399',wiki:'n2',expertWeight:2,expertNote:'先进制程材料。'}
+];
+
+let ontoEdges=[
+  ['台积电','N2','usesNode'],
+  ['台积电','CoWoS','usesTechnology'],
+  ['台积电','Arizona Fab','operates'],
+  ['N2','GAA','usesTechnology'],
+  ['CoWoS','HBM','usesTechnology'],
+  ['NVIDIA','台积电','customerOf'],
+  ['N2','EUV 光刻机','usesNode'],
+  ['EUV 光刻胶','N2','supplies']
+];
+
+const OBJECT_TYPES=[
+  ['Company','公司','台积电、ASML、英伟达'],
+  ['Fab','晶圆厂 / 制造基地','Arizona Fab、熊本 Fab'],
+  ['ProcessNode','制程节点','N2、N3、N5、28nm'],
+  ['Product','产品','GPU、HBM、SoC、MCU'],
+  ['Equipment','设备','EUV 光刻机、刻蚀机、量测设备'],
+  ['Material','材料','光刻胶、硅片、特气'],
+  ['Technology','技术 / 工艺 / 封装','CoWoS、GAA、Chiplet'],
+  ['Event','事件','扩产、量产、并购、合作']
+];
+
+const RELATION_TYPES=[
+  ['owns / operates','Company → Fab','公司拥有或运营晶圆厂'],
+  ['usesNode','Product/Fab → ProcessNode','使用某制程'],
+  ['supplies','Company → Equipment/Material','供应设备或材料'],
+  ['customerOf','Company → Company','客户关系'],
+  ['partnerWith','Company → Company','合作关系'],
+  ['competesWith','Company → Company','竞争关系'],
+  ['usesTechnology','Product/Company → Technology','使用某项技术'],
+  ['relatedToEvent','Company/Product → Event','与事件相关'],
+  ['locatedIn','Fab → Region','地理位置'],
+  ['mentionedIn','Entity → Document','来源文档关联']
+];
+
+const defaultFocusList={
+  '公司':[['TSMC',true],['ASML',true],['NVIDIA',true],['Qualcomm',false],['Broadcom',false]],
+  '制程':[['N2',true],['N3',true],['N5',true],['28nm',false]],
+  '技术':[['CoWoS',true],['GAA',true],['EUV',true],['SiC',false]],
+  '材料':[['EUV Photoresist',true],['Silicon Wafer',true],['CMP Slurry',false]]
+};
+let focusList=JSON.parse(JSON.stringify(defaultFocusList));
+
+let qaRecords=[];
+let expertInjections=[
+  {time:'2026-01-16 10:30',entity:'台积电',weight:5,note:'专家认为其是先进制程与先进封装主线中的核心锚点。'},
+  {time:'2026-01-16 10:32',entity:'CoWoS',weight:5,note:'专家认为 CoWoS 产能是 AI/HPC 产业链短期最关键变量。'}
+];
+let memories=[
+  {time:'2026-01-16 10:20',text:'N2 采用 GAA 结构，已进入风险试产并规划量产。'},
+  {time:'2026-01-16 10:25',text:'CoWoS 产能与基板供应是 AI 封装产业链短期关注重点。'}
+];
+let currentUser=null,currentWorkspace=null,authMode='login';
+
+function $(id){return document.getElementById(id)}
+function toast(t){
+  const el=$('toast');
+  el.innerHTML=t;
+  el.classList.add('show');
+  clearTimeout(window.__t);
+  window.__t=setTimeout(()=>el.classList.remove('show'),2400);
+}
+function selectedFile(){return files.find(f=>f.id===activeFile)||files[0]}
+function selectedFileJob(){return procJobs.find(j=>j.sourceId===activeFile)||null}
+function selectedWiki(){return wikiPages[activeWiki]||wikiPages.tsmc}
+function scopeLabel(s){return {wiki:'Workspace Wiki',ontology:'本体图谱',sources:'源文档',qa:'问答记录'}[s]||s}
+function chartLabel(s){return {roadmap:'技术路线图',compare:'公司对比矩阵',timeline:'事件时间线',supply:'供应链结构图'}[s]||s}
+const dotColor=['#5b6ef5','#8b5cf6','#2dd4bf','#f59e0b'];
+const PARSE_STAGES=[
+  {id:'upload',lbl:'上传'},
+  {id:'parse_content',lbl:'解析\\n正文'},
+  {id:'structure_markdown',lbl:'结构化\\nMD'},
+  {id:'extract_entities',lbl:'抽取\\n实体'},
+  {id:'build_wiki',lbl:'Wiki\\nReady'}
+];
+function fileDownloadName(name,ext='.md'){
+  const base=String(name||'source').replace(/\.[^.]+$/,'').trim()||'source';
+  return `${base}${ext}`;
+}
+function downloadTextFile(text,fileName,mime='text/plain;charset=utf-8'){
+  const blob=new Blob([text],{type:mime});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download=fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+}
+function stageIndexForJob(stage){
+  const idx=PARSE_STAGES.findIndex(item=>item.id===stage);
+  return idx>=0?idx:0;
+}
+function normalizeProcJobs(items=[]){
+  return (items||[]).map(job=>{
+    const source=files.find(file=>file.id===job.sourceId)||{};
+    return {
+      id:source.id||job.sourceId||job.id,
+      sourceId:job.sourceId||source.id||job.id,
+      jobId:job.id,
+      ft:source.type||'上传文档',
+      name:source.name||source.title||job.sourceId||job.id,
+      stage:stageIndexForJob(job.stage),
+      stageKey:job.stage||'upload',
+      done:job.status==='completed',
+      built:!!source.wikiBuilt,
+      progress:Number(job.progress||0),
+      status:job.status||'pending'
+    };
+  });
+}
+function focusCount(){
+  let n=0;
+  Object.values(focusList).forEach(g=>g.forEach(x=>{if(x[1])n++}));
+  return n;
+}
+function highWeightCount(){return ontoNodes.filter(n=>(n.expertWeight||1)>=4).length}
+function esc(s){
+  return String(s||'').replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
+}
+function hasAuth(){return !!currentUser}
+function wikiMapFromArray(items){
+  return Object.fromEntries((items||[]).map(item=>[item.id,item]));
+}
+function cloneFocusList(items){
+  return JSON.parse(JSON.stringify(items||defaultFocusList));
+}
+function renderChatMessage(msg){
+  const kind=msg.role==='user'?'user':((msg.citations||[]).length?'ai':'refuse');
+  const citations=(msg.citations||[]).map(esc).join(' · ');
+  return `<div class="msg ${kind}">
+    ${esc(msg.content||'')}<br>
+    <span class="cite">${citations?`引用：${citations}`:'grounded-only'}</span>
+  </div>`;
+}
+async function api(url,options={}){
+  const opts={credentials:'include',...options};
+  if(opts.body && !(opts.body instanceof FormData)){
+    opts.headers={'Content-Type':'application/json',...(opts.headers||{})};
+  }
+  const res=await fetch(url,opts);
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||'请求失败');
+  return data;
+}
+function showAuth(mode='login'){
+  authMode=mode;
+  $('authOverlay').classList.add('show');
+  $('displayNameField').classList.toggle('hidden',mode!=='register');
+  $('authTitle').textContent=mode==='login'?'登录 XinWiki':'注册 XinWiki';
+  $('authLead').textContent=mode==='login'
+    ?'登录后即可访问多用户工作空间、Dify Chatbot 和 llm-wiki 导出。'
+    :'创建一个独立工作空间，所有来源、Wiki、本体、聊天和记忆都会按用户隔离。';
+  $('authSubmitBtn').textContent=mode==='login'?'登录':'注册并进入';
+  $('authSwitchBtn').textContent=mode==='login'?'没有账号？去注册':'已有账号？去登录';
+  $('authStatus').textContent='';
+}
+function hideAuth(){
+  $('authOverlay').classList.remove('show');
+  $('authStatus').textContent='';
+}
+function toggleAuthMode(){
+  showAuth(authMode==='login'?'register':'login');
+}
+function renderTopbarState(){
+  $('workspacePill').innerHTML=hasAuth()
+    ? `<span class="dot"></span>${esc(currentWorkspace?.name||'工作空间')} · ${esc(currentUser?.displayName||currentUser?.email||'')}`
+    : '<span class="dot"></span>XinWiki · 请先登录';
+  $('authActionBtn').style.display=hasAuth()?'inline-flex':'none';
+  $('exportWikiBtn').style.display=hasAuth()?'inline-flex':'none';
+  $('uploadBtn').disabled=!hasAuth();
+}
+function hydrateState(data){
+  currentUser=data.user||null;
+  currentWorkspace=data.workspace||null;
+  files=data.files||[];
+  sourceMarkdownCache=Object.fromEntries(files.map(file=>[file.id,file.markdown||'']));
+  wikiPages=wikiMapFromArray(data.wikiPages||[]);
+  ontoNodes=data.ontologyNodes||[];
+  ontoEdges=data.ontologyEdges||[];
+  expertInjections=data.expertInjections||[];
+  qaRecords=data.qaRecords||[];
+  memories=(data.memories||[]).map(m=>({time:m.time,text:m.text,period:m.period}));
+  focusList=cloneFocusList(data.focuses);
+  chatThread=data.chatThread||null;
+  chatMessages=data.chatMessages||[];
+  procJobs=normalizeProcJobs(data.jobs||[]);
+  const lastAssistant=[...chatMessages].reverse().find(m=>m.role==='assistant');
+  if(lastAssistant){
+    lastAnswer=lastAssistant.content||'';
+    lastCitations=lastAssistant.citations||[];
+  }
+  if(files.length && !files.find(f=>f.id===activeFile)) activeFile=files[0].id;
+  const wikiList=Object.values(wikiPages);
+  if(wikiList.length && !wikiPages[activeWiki]) activeWiki=wikiList[0].id;
+  if(ontoNodes.length && !ontoNodes.find(n=>n.id===activeNode)) activeNode=ontoNodes[0].id;
+  renderTopbarState();
+}
+async function loadBootstrap(){
+  const data=await api('/api/bootstrap');
+  hydrateState(data);
+  renderRail();
+  renderLeft();
+  renderSources();
+  renderWiki();
+  renderOntology();
+  renderAsk();
+  renderGenerate();
+}
+async function checkSession(){
+  try{
+    await loadBootstrap();
+    hideAuth();
+  }catch(err){
+    currentUser=null;
+    currentWorkspace=null;
+    renderTopbarState();
+    showAuth('login');
+  }
+}
+async function submitAuth(){
+  const payload={
+    email:$('authEmail').value.trim(),
+    password:$('authPassword').value.trim()
+  };
+  if(authMode==='register') payload.displayName=$('authDisplayName').value.trim();
+  $('authStatus').textContent='正在提交...';
+  try{
+    await api(authMode==='login'?'/api/auth/login':'/api/auth/register',{
+      method:'POST',
+      body:JSON.stringify(payload)
+    });
+    await loadBootstrap();
+    hideAuth();
+    toast(authMode==='login'?'登录成功':'注册成功，工作空间已创建');
+  }catch(err){
+    $('authStatus').textContent=err.message;
+  }
+}
+async function logout(){
+  try{await api('/api/auth/logout',{method:'POST'})}catch(err){}
+  currentUser=null;
+  currentWorkspace=null;
+  renderTopbarState();
+  showAuth('login');
+  toast('已退出登录');
+}
+function openUpload(){
+  if(!hasAuth()){
+    showAuth('login');
+    toast('请先登录后再上传文档');
+    return;
+  }
+  $('fileInput').click();
+}
+async function exportLlmWiki(){
+  try{
+    const result=await api('/api/llm-wiki/export',{method:'POST'});
+    toast(`已导出 llm-wiki：${result.pageCount||0} 个页面`);
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+/* ---------------- Shell ---------------- */
+function renderRail(){
+  $('rail').innerHTML=NAV.map(n=>`
+    <div class="nav-btn ${activeNav===n.id?'active':''}" data-nav="${n.id}">
+      ${n.icon}<span>${n.label}</span>
+    </div>
+  `).join('');
+  document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>switchNav(b.dataset.nav));
+}
+function switchNav(id){
+  activeNav=id;
+  renderRail();
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $('view-'+id).classList.add('active');
+  renderLeft();
+  renderActive();
+}
+function renderActive(){
+  if(activeNav==='sources')renderSources();
+  if(activeNav==='wiki')renderWiki();
+  if(activeNav==='ontology')renderOntology();
+  if(activeNav==='ask')renderAsk();
+  if(activeNav==='generate')renderGenerate();
+}
+
+/* ---------------- Left Panel ---------------- */
+function renderLeft(){
+  const left=$('left');
+
+  if(activeNav==='sources'){
+    left.innerHTML=`
+      <div class="left-head"><h3>来源 Sources</h3><p>ingest · parse · build wiki</p></div>
+      <div class="left-body">
+        <div class="upload-zone" onclick="openUpload()">
+          <div class="uz-ic">⇪</div><b>上传文档</b><p>MD / TXT / HTML / PDF / DOC / DOCX / PPT / PPTX</p>
+        </div>
+        <div id="procList"></div>
+        ${files.map(fileCard).join('')}
+      </div>
+    `;
+    bindFileCards();
+    renderProcList();
+    return;
+  }
+
+  if(activeNav==='wiki'){
+    left.innerHTML=`
+      <div class="left-head"><h3>Wiki 知识页</h3><p>主题 · 实体 · 关系 · 来源</p></div>
+      <div class="left-body">
+        ${Object.values(wikiPages).map(w=>`
+          <div class="wiki-item ${activeWiki===w.id?'active':''}" data-wiki="${w.id}">
+            <b>${esc(w.title)}</b>
+            <p style="font-size:12px;color:var(--muted);margin-top:5px">${esc(w.type)}</p>
+            <div class="file-meta">
+              <span class="mini">${w.entities.length} entities</span>
+              <span class="mini">${w.relations.length} links</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    document.querySelectorAll('[data-wiki]').forEach(i=>i.onclick=()=>{
+      activeWiki=i.dataset.wiki;
+      renderLeft();
+      renderWiki();
+    });
+    return;
+  }
+
+  if(activeNav==='ontology'){
+    left.innerHTML=`
+      <div class="left-head"><h3>本体 Ontology</h3><p>${ontoNodes.length} 对象 · ${ontoEdges.length} 关系</p></div>
+      <div class="left-body">
+        <div class="card pad" style="margin-bottom:14px">
+          <b style="font-size:13px">专家经验注入</b>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">
+            已有 ${expertInjections.length} 条专家经验，${highWeightCount()} 个高重要性本体。
+          </p>
+          <div class="tag-row">
+            <span class="tag indigo">expert weighting</span>
+            <span class="tag teal">priority routing</span>
+          </div>
+        </div>
+        ${ontoNodes.map(n=>`
+          <div class="entity-card ${activeNode===n.id?'active':''}" data-node-left="${esc(n.id)}">
+            <div class="file-top">
+              <div class="file-icon" style="background:${n.color}1c;color:${n.color}">${icons.onto}</div>
+              <div>
+                <div class="file-name">${esc(n.id)}</div>
+                <div class="file-meta">
+                  <span class="mini">${esc(n.type)}</span>
+                  <span class="mini">expert ${n.expertWeight||1}/5</span>
+                </div>
+              </div>
+            </div>
+            <div class="weight-bar"><i style="width:${((n.expertWeight||1)/5)*100}%"></i></div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    document.querySelectorAll('[data-node-left]').forEach(el=>el.onclick=()=>{
+      activeNode=el.dataset.nodeLeft;
+      renderOntology();
+      renderLeft();
+    });
+    return;
+  }
+
+  if(activeNav==='ask'){
+    left.innerHTML=`
+      <div class="left-head"><h3>问答范围</h3><p>intent-level grounded QA</p></div>
+      <div class="left-body">
+        <div class="card pad">
+          <b style="font-size:13px">当前检索范围</b>
+          <div class="tag-row">
+            <span class="tag indigo">${files.length} 源文档</span>
+            <span class="tag teal">${Object.keys(wikiPages).length} Wiki</span>
+            <span class="tag violet">${ontoNodes.length} 实体</span>
+            <span class="tag amber">${highWeightCount()} 专家重点</span>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7">
+            若问题只命中实体，但没有命中问题意图证据，例如“营收预测 / 利润 / 估值”，系统会拒绝回答。
+          </p>
+        </div>
+        <div class="section">
+          <h2>推荐问题</h2>
+          <div class="grid">
+            <button class="btn secondary" onclick="quickAsk('台积电 N2 目前有哪些关键信息？')">N2 关键信息</button>
+            <button class="btn secondary" onclick="quickAsk('CoWoS 产业链涉及哪些环节和玩家？')">CoWoS 产业链</button>
+            <button class="btn secondary" onclick="quickAsk('专家重点关注哪些本体？')">专家重点本体</button>
+            <button class="btn secondary" onclick="quickAsk('台积电26年营收预测')">测试营收预测拒答</button>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  if(activeNav==='generate'){
+    left.innerHTML=`
+      <div class="left-head"><h3>报告生成</h3><p>chart · ppt · report</p></div>
+      <div class="left-body">
+        <div class="card pad">
+          <b style="font-size:13px">当前生成配置</b>
+          <p style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.8">
+            数据范围：${scopeLabel(activeScope)}<br>
+            图表类型：${chartLabel(activeChart)}<br>
+            模型：${activeModel}<br>
+            专家重点：${highWeightCount()} 个
+          </p>
+          <div class="tag-row"><span class="tag dark">${activeModel}</span></div>
+        </div>
+        <div class="card pad" style="margin-top:14px">
+          <b style="font-size:13px">问答记录沉淀</b>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">
+            已保存 ${qaRecords.length} 条问答记录可用于报告生成。
+          </p>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function fileCard(f){
+  return `
+    <div class="file-card ${activeFile===f.id?'active':''}" data-file="${f.id}">
+      <div class="file-top">
+        <div class="file-icon">${icons.pdf}</div>
+        <div>
+          <div class="file-name">${esc(f.title)}</div>
+          <div class="file-meta">
+            <span class="mini">${esc(f.type)}</span>
+            <span class="mini">${esc(f.size)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="progress"><i style="width:${f.progress}%"></i></div>
+      <div class="file-meta">
+        <span class="mini">${f.parsed?'已解析':'解析中'}</span>
+        <span class="mini">${f.wikiBuilt?'已建 Wiki':'待建 Wiki'}</span>
+      </div>
+    </div>
+  `;
+}
+function bindFileCards(){
+  document.querySelectorAll('[data-file]').forEach(c=>c.onclick=()=>{
+    activeFile=c.dataset.file;
+    renderLeft();
+    renderSources();
+  });
+}
+
+/* ---------------- Upload Pipeline ---------------- */
+async function handleFiles(list){
+  if(!list?.length) return;
+  const formData=new FormData();
+  [...list].forEach(file=>formData.append('files',file));
+  try{
+    const result=await api('/api/sources/upload-and-build',{method:'POST',body:formData});
+    await loadBootstrap();
+    const source=result.sources?.[0];
+    const wikiPage=result.wikiPages?.[0];
+    if(source) activeFile=source.id;
+    if(wikiPage) activeWiki=wikiPage.id;
+    switchNav('sources');
+    toast(`已上传并构建 ${list.length} 个文件`);
+  }catch(err){
+    toast(err.message);
+  }
+}
+function renderProcList(){
+  const el=$('procList');
+  if(!el)return;
+  if(!procJobs.length){
+    el.innerHTML='';
+    return;
+  }
+  el.innerHTML=procJobs.map(j=>{
+    const stages=PARSE_STAGES.map((s,i)=>{
+      const done=i<j.stage || (j.done && i<=j.stage),active=i===j.stage&&!j.done;
+      return `
+        <div class="stg ${done?'done':''} ${active?'active':''}">
+          <div class="ring">${done?'✓':active?'◴':i+1}</div>
+          <div class="lbl">${s.lbl.replace('\\n','<br>')}</div>
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="proc-card">
+        <div class="pc-top">
+          <span class="pc-ft">${esc(j.ft)}</span>
+          <span class="pc-name">${esc(j.name)}</span>
+          <span class="pc-state">${j.built?'已建 Wiki':j.done?'已完成':'处理中'}</span>
+        </div>
+        <div class="stages">${stages}</div>
+        <div class="file-meta" style="margin-top:10px">
+          <span class="mini">Job ${esc(j.jobId)}</span>
+          <span class="mini">${esc(j.stageKey)}</span>
+          <span class="mini">${esc(String(j.progress))}%</span>
+        </div>
+        <button class="btn build-wiki ${j.done&&!j.built?'show':''}" onclick="buildUploadedWiki('${j.id}')">
+          ⚡ 生成 Workspace Wiki 页面
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+async function buildUploadedWiki(id){
+  try{
+    const result=await api(`/api/sources/${id}/build-wiki`,{method:'POST'});
+    await loadBootstrap();
+    activeWiki=result.wikiPage.id;
+    activeFile=result.source.id;
+    renderLeft();
+    switchNav('wiki');
+    toast('Workspace Wiki 页面已生成');
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+/* ---------------- Sources ---------------- */
+function renderSources(){
+  const f=selectedFile();
+  const job=selectedFileJob();
+  const markdown=sourceMarkdownCache[activeFile]||f.markdown||'';
+  $('view-sources').innerHTML=`
+    <div class="page-title">
+      <div>
+        <h1>来源 · 文档解析</h1>
+        <p class="lead">
+          来源层负责文档摄入、解析与结构化。XinWiki 抽取正文、保留章节结构、转成统一 Markdown，
+          再交给 Workspace Wiki 引擎组织成知识页面。
+        </p>
+        <div class="tag-row">
+          <span class="tag amber">${esc(f.source)}</span>
+          <span class="tag indigo">${esc(f.date)}</span>
+          <span class="tag teal">${f.parsed?'已解析':'待解析'}</span>
+          <span class="tag violet">${f.wikiBuilt?'已建 Wiki':'待建 Wiki'}</span>
+          ${job?`<span class="tag dark">Job · ${esc(job.status)}</span>`:''}
+        </div>
+      </div>
+      <button class="btn" onclick="buildWikiFromSource()">构建 / 更新 Wiki</button>
+    </div>
+
+    <div class="source-layout">
+      <div class="card pad">
+        <div class="source-hero">
+          ${icons.pdf}
+          <h3>${esc(f.name)}</h3>
+          <p>${esc(f.title)}</p>
+          <div class="tag-row" style="justify-content:center">
+            <span class="tag">${esc(f.type)}</span>
+            <span class="tag">${esc(f.size)}</span>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>解析摘要</h2>
+          <p style="color:var(--muted);line-height:1.8">${esc(f.abstract)}</p>
+        </div>
+
+        <div class="section">
+          <h2>抽取的关键事实</h2>
+          <table>
+            <thead><tr><th>#</th><th>Fact</th><th>映射</th></tr></thead>
+            <tbody>
+              ${f.facts.map((x,i)=>`
+                <tr>
+                  <td>${i+1}</td>
+                  <td>${esc(x)}</td>
+                  <td><span class="tag teal">实体 / 关系候选</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card pad">
+        <h3 style="font-size:16px">从文档到知识</h3>
+        ${[
+          ['Ingest','文档进入队列，识别类型与基础元数据'],
+          ['解析','抽取正文、表格、章节结构与图片说明'],
+          ['结构化','转成统一 Markdown + sections + tables'],
+          ['Workspace Wiki','生成主题摘要、实体卡片与关系链接'],
+          ['本体','候选实体与关系进入轻量本体层']
+        ].map(s=>`
+          <div class="parse-step">
+            <div class="step-dot">✓</div>
+            <div class="step-text"><b>${s[0]}</b><p>${s[1]}</p></div>
+          </div>
+        `).join('')}
+
+        <div class="section">
+          <h2>操作</h2>
+          <div class="grid">
+            <button class="btn secondary" onclick="reparseSource()">重新解析并更新 Wiki</button>
+            <button class="btn secondary" onclick="downloadSourceMarkdown()">导出 Markdown</button>
+            <button class="btn" onclick="buildWikiFromSource()">构建 Wiki</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>最近任务状态</h2>
+          <div class="card pad" style="padding:14px">
+            ${job?`
+              <div class="file-meta" style="margin-bottom:10px">
+                <span class="mini">Job ${esc(job.jobId)}</span>
+                <span class="mini">${esc(job.status)}</span>
+                <span class="mini">${esc(job.stageKey)}</span>
+                <span class="mini">${esc(String(job.progress))}%</span>
+              </div>
+              <div class="stages">
+                ${PARSE_STAGES.map((s,i)=>{
+                  const done=i<job.stage || (job.done && i<=job.stage),active=i===job.stage&&!job.done;
+                  return `
+                    <div class="stg ${done?'done':''} ${active?'active':''}">
+                      <div class="ring">${done?'✓':active?'◴':i+1}</div>
+                      <div class="lbl">${s.lbl.replace('\\n','<br>')}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `:'<p style="color:var(--muted)">当前来源尚无后台任务记录。</p>'}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>结构化 Markdown 预览</h2>
+      <div class="card pad">
+        <div class="file-meta" style="margin-bottom:12px">
+          <span class="mini">${esc(fileDownloadName(f.name))}</span>
+          <span class="mini">${markdown?'已生成 Markdown':'暂无 Markdown'}</span>
+        </div>
+        <pre style="white-space:pre-wrap;line-height:1.8;color:var(--muted);font-family:var(--mono);max-height:320px;overflow:auto">${esc(markdown||'暂无可预览内容')}</pre>
+      </div>
+    </div>
+  `;
+}
+async function reparseSource(){
+  try{
+    const result=await api(`/api/sources/${activeFile}/reparse`,{
+      method:'POST',
+      body:JSON.stringify({rebuildWiki:true})
+    });
+    await loadBootstrap();
+    activeFile=result.source.id;
+    if(result.wikiPage) activeWiki=result.wikiPage.id;
+    switchNav('sources');
+    toast('已重新解析并同步更新 Wiki');
+  }catch(err){
+    toast(err.message);
+  }
+}
+async function downloadSourceMarkdown(){
+  try{
+    const result=await api(`/api/sources/${activeFile}/markdown`);
+    const file=selectedFile();
+    const markdown=result.markdown||'';
+    sourceMarkdownCache[activeFile]=markdown;
+    renderSources();
+    downloadTextFile(markdown,fileDownloadName(file?.name),'text/markdown;charset=utf-8');
+    toast('结构化 Markdown 已导出');
+  }catch(err){
+    toast(err.message);
+  }
+}
+async function buildWikiFromSource(){
+  try{
+    const result=await api(`/api/sources/${activeFile}/build-wiki`,{method:'POST'});
+    await loadBootstrap();
+    activeWiki=result.wikiPage.id;
+    toast('已更新到 Workspace Wiki 与本体候选');
+    switchNav('wiki');
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+/* ---------------- Wiki ---------------- */
+function renderWiki(){
+  const w=selectedWiki();
+  $('view-wiki').innerHTML=`
+    <div class="page-title">
+      <div>
+        <h1>${esc(w.title)}</h1>
+        <p class="lead">
+          Workspace Wiki 页面把文档内容整理成类似百科的知识页：主题摘要、实体卡片、关系链接与可引用来源都汇合在这里。
+          它是问答与报告生成的核心知识来源。
+        </p>
+        <div class="tag-row">
+          <span class="tag dark">${esc(w.type)}</span>
+          <span class="tag indigo">来源：${esc(w.source)}</span>
+        </div>
+      </div>
+      <button class="btn" onclick="promoteOntology()">加入本体图谱</button>
+    </div>
+
+    <div class="grid three">
+      <div class="kpi"><div class="val">${w.sections.length}</div><div class="label">知识小节</div></div>
+      <div class="kpi"><div class="val">${w.entities.length}</div><div class="label">相关实体</div></div>
+      <div class="kpi"><div class="val">${w.relations.length}</div><div class="label">关系链接</div></div>
+    </div>
+
+    <div class="section">
+      <div class="card pad">
+        <h2>主题摘要</h2>
+        <p style="font-size:16px;line-height:1.85;color:#2a3040">${esc(w.summary)}</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>知识内容</h2>
+      <div class="card pad wiki-md">
+        ${w.sections.map(s=>`<h3>${esc(s[0])}</h3><ul><li>${esc(s[1])}</li></ul>`).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>相关实体</h2>
+      <div class="card pad">
+        ${w.entities.map((e,i)=>`<span class="entity-chip"><i style="background:${dotColor[i%4]}"></i>${esc(e)}</span>`).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>关系链接（本体候选）</h2>
+      <div class="card pad">
+        <table>
+          <thead><tr><th>主体</th><th>关系</th><th>客体</th><th>操作</th></tr></thead>
+          <tbody>
+            ${w.relations.map((r,i)=>`
+              <tr>
+                <td>${esc(r[0])}</td>
+                <td><span class="tag amber">${esc(r[1])}</span></td>
+                <td>${esc(r[2])}</td>
+                <td><button class="btn secondary sm" onclick="promoteWikiRelation(${i})">加入本体</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+async function promoteOntology(){
+  const w=selectedWiki();
+  try{
+    await api(`/api/wiki/${w.id}/promote`,{method:'POST'});
+    await loadBootstrap();
+    toast('Wiki 已加入本体图谱');
+    switchNav('ontology');
+  }catch(err){
+    toast(err.message);
+  }
+}
+async function promoteWikiRelation(index){
+  const w=selectedWiki();
+  const relation=(w.relations||[])[index];
+  if(!relation)return;
+  try{
+    const result=await api(`/api/wiki/${w.id}/relations/promote`,{
+      method:'POST',
+      body:JSON.stringify({relations:[relation]})
+    });
+    await loadBootstrap();
+    toast(result.createdEdges?.length?'关系已加入本体图谱':'关系已存在于本体图谱');
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+/* ---------------- Ontology + Expert Injection ---------------- */
+async function toggleFocus(group,name){
+  const nextFocuses=cloneFocusList(focusList);
+  nextFocuses[group]=(nextFocuses[group]||[]).map(x=>x[0]===name?[x[0],!x[1]]:x);
+  try{
+    const data=await api('/api/focuses',{
+      method:'PUT',
+      body:JSON.stringify(nextFocuses)
+    });
+    focusList=cloneFocusList(data.focuses);
+    renderOntology();
+    renderLeft();
+  }catch(err){
+    toast(err.message);
+  }
+}
+function weightLabel(w){
+  return ['','低','较低','中','高','最高'][Number(w)||1]||'低';
+}
+function renderExpertOptions(){
+  return ontoNodes.map(n=>`<option value="${esc(n.id)}" ${activeNode===n.id?'selected':''}>${esc(n.id)} · ${esc(n.type)} · 当前 ${n.expertWeight||1}/5</option>`).join('');
+}
+async function injectExpertExperience(){
+  const entity=$('expertEntity').value;
+  const weight=Number($('expertWeight').value);
+  const note=$('expertNote').value.trim() || '专家未填写详细理由。';
+  try{
+    await api('/api/expert-injections',{
+      method:'POST',
+      body:JSON.stringify({entity,weight,note})
+    });
+    activeNode=entity;
+    await loadBootstrap();
+    toast(`专家经验已注入：${entity} · ${weightLabel(weight)}重要性`);
+    renderOntology();
+    renderLeft();
+  }catch(err){
+    toast(err.message);
+  }
+}
+async function quickSetExpert(entity,weight){
+  try{
+    await api('/api/expert-injections',{
+      method:'POST',
+      body:JSON.stringify({
+        entity,
+        weight,
+        note:`专家快速标记为 ${weightLabel(weight)}重要性。`
+      })
+    });
+    activeNode=entity;
+    await loadBootstrap();
+    toast(`已更新专家重要性：${entity} ${weight}/5`);
+    renderOntology();
+    renderLeft();
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+function renderOntology(){
+  const pos=Object.fromEntries(ontoNodes.map(n=>[n.id,n]));
+  const active=ontoNodes.find(n=>n.id===activeNode)||ontoNodes[0];
+  activeNode=active.id;
+
+  $('view-ontology').innerHTML=`
+    <div class="page-title">
+      <div>
+        <h1>轻量本体图谱</h1>
+        <p class="lead">
+          本体模块支持 8 类核心对象与约 10 类关系。专家可以选择更重要的本体对象，
+          设置重要性等级并写入判断理由，从而影响问答优先级、图谱权重与报告主题。
+        </p>
+        <div class="tag-row">
+          <span class="tag indigo">${ontoNodes.length} 对象</span>
+          <span class="tag teal">${ontoEdges.length} 关系</span>
+          <span class="tag violet">${focusCount()} 重点关注</span>
+          <span class="tag amber">${expertInjections.length} 专家经验</span>
+        </div>
+      </div>
+      <div class="gen-actions">
+        <button class="btn secondary" onclick="toast('图谱已重新布局')">重新布局</button>
+        <button class="btn secondary" onclick="toast('本体 JSON 已导出，包含 expertWeight 与 expertNote')">导出 JSON</button>
+      </div>
+    </div>
+
+    <div class="ontology-wrap">
+      <svg id="ontoSvg" viewBox="0 0 960 660">
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="4" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0L10 5L0 10z" fill="#6877aa"></path>
+          </marker>
+        </defs>
+
+        ${ontoEdges.map(e=>{
+          const a=pos[e[0]],b=pos[e[1]];
+          if(!a||!b)return'';
+          const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+          const hi=activeNode===e[0]||activeNode===e[1];
+          return `
+            <line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"
+              stroke="${hi?'#7c8cff':'#2c3552'}" stroke-width="${hi?2.2:1.2}"
+              opacity="${hi?.9:.45}" marker-end="url(#arrow)"></line>
+            <text class="edge-label" x="${mx}" y="${my-6}" text-anchor="middle">${esc(e[2])}</text>
+          `;
+        }).join('')}
+
+        ${ontoNodes.map(n=>{
+          const ac=n.id===activeNode;
+          const w=n.expertWeight||1;
+          const r=25+w*4;
+          return `
+            <g data-node="${esc(n.id)}" style="cursor:pointer">
+              <circle cx="${n.x}" cy="${n.y}" r="${ac?r+26:r+18}" fill="${n.color}" opacity="${ac?.23:.10}" filter="url(#glow)"></circle>
+              <circle cx="${n.x}" cy="${n.y}" r="${ac?r+5:r}" fill="#11152a" stroke="${n.color}" stroke-width="${ac?3:1.7}" filter="url(#glow)"></circle>
+              ${w>=4?`<circle cx="${n.x+r*.65}" cy="${n.y-r*.65}" r="8" fill="#f59e0b"></circle>`:''}
+              <text class="node-label" x="${n.x}" y="${n.y-3}" text-anchor="middle">${esc(n.id.length>8?n.id.slice(0,8):n.id)}</text>
+              <text class="node-type" x="${n.x}" y="${n.y+13}" text-anchor="middle">${esc(n.type)} · E${w}</text>
+            </g>
+          `;
+        }).join('')}
+      </svg>
+
+      <div class="onto-panel">
+        <h3>专家增强本体</h3>
+        <p><b>Expert Weight：</b>1–5 级，影响节点大小、问答排序、报告优先级。</p>
+        <p><b>高重要性：</b>等级 4–5 的本体会被优先引用，但不能替代事实证据。</p>
+        <div class="tag-row">
+          <span class="tag dark">${highWeightCount()} high</span>
+          <span class="tag dark">${expertInjections.length} injected</span>
+        </div>
+      </div>
+
+      <div class="onto-detail">
+        <h3>${esc(active.id)}</h3>
+        <p>对象类型：${esc(active.type)}</p>
+        <p>专家重要性：${active.expertWeight||1}/5 · ${weightLabel(active.expertWeight||1)}</p>
+        <p>专家理由：${esc(active.expertNote||'暂无专家经验')}</p>
+        <div class="tag-row">
+          <button class="btn secondary sm" onclick="openWikiFromNode('${esc(active.wiki)}')">打开 Wiki</button>
+          <button class="btn secondary sm" onclick="quickSetExpert('${esc(active.id)}',5)">设为最高</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>专家经验注入接口</h2>
+      <div class="expert-layout">
+        <div class="expert-card">
+          <h3 style="font-size:16px">注入专家判断</h3>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.7">
+            专家可以选择本体对象，设置重要性等级，并写入判断理由。该信息不会覆盖原始文档事实，
+            而是作为问答排序、报告主题选择、图谱节点权重的“经验层”。
+          </p>
+
+          <label style="display:block;margin-top:14px;font-size:12px;color:var(--muted)">选择本体对象</label>
+          <select id="expertEntity">${renderExpertOptions()}</select>
+
+          <label style="display:block;margin-top:14px;font-size:12px;color:var(--muted)">重要性等级</label>
+          <select id="expertWeight">
+            <option value="1">1 · 低</option>
+            <option value="2">2 · 较低</option>
+            <option value="3">3 · 中</option>
+            <option value="4">4 · 高</option>
+            <option value="5" selected>5 · 最高</option>
+          </select>
+
+          <label style="display:block;margin-top:14px;font-size:12px;color:var(--muted)">专家理由</label>
+          <textarea id="expertNote" placeholder="例如：CoWoS 产能是当前 AI/HPC 供应链的核心瓶颈，需要在问答和报告中优先呈现。"></textarea>
+
+          <div class="tag-row">
+            <button class="btn" onclick="injectExpertExperience()">注入专家经验</button>
+            <button class="btn secondary" onclick="toast('专家经验草稿已保存')">保存草稿</button>
+          </div>
+        </div>
+
+        <div class="expert-card">
+          <h3 style="font-size:16px">专家重点本体</h3>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">按专家重要性排序展示。</p>
+          <div style="margin-top:14px">
+            ${[...ontoNodes].sort((a,b)=>(b.expertWeight||1)-(a.expertWeight||1)).map(n=>`
+              <div style="padding:11px 0;border-bottom:1px solid var(--line)">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                  <b style="font-size:13px">${esc(n.id)}</b>
+                  <span class="expert-badge">E${n.expertWeight||1} · ${weightLabel(n.expertWeight||1)}</span>
+                </div>
+                <div class="weight-bar"><i style="width:${((n.expertWeight||1)/5)*100}%"></i></div>
+                <p style="font-size:12px;color:var(--muted);line-height:1.6;margin-top:7px">${esc(n.expertNote||'暂无专家理由')}</p>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>专家经验日志</h2>
+      <div class="card pad">
+        <table>
+          <thead><tr><th>时间</th><th>本体</th><th>重要性</th><th>专家理由</th></tr></thead>
+          <tbody>
+            ${expertInjections.map(x=>`
+              <tr>
+                <td style="font-family:var(--mono);font-size:11px">${esc(x.time)}</td>
+                <td>${esc(x.entity)}</td>
+                <td><span class="tag amber">E${x.weight} · ${weightLabel(x.weight)}</span></td>
+                <td style="color:var(--muted)">${esc(x.note)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>对象类型（8 类）</h2>
+      <div class="card pad">
+        <table>
+          <thead><tr><th>Object Type</th><th>说明</th><th>示例</th></tr></thead>
+          <tbody>
+            ${OBJECT_TYPES.map(o=>`
+              <tr><td><b>${esc(o[0])}</b></td><td>${esc(o[1])}</td><td style="color:var(--muted)">${esc(o[2])}</td></tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>关系类型（约 10 类）</h2>
+      <div class="card pad">
+        <table>
+          <thead><tr><th>关系</th><th>方向</th><th>含义</th></tr></thead>
+          <tbody>
+            ${RELATION_TYPES.map(r=>`
+              <tr>
+                <td><span class="tag amber">${esc(r[0])}</span></td>
+                <td style="font-family:var(--mono);font-size:12px">${esc(r[1])}</td>
+                <td style="color:var(--muted)">${esc(r[2])}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>重点关注本体</h2>
+      <div class="grid four">
+        ${Object.entries(focusList).map(([g,items])=>`
+          <div class="card pad focus-group">
+            <h4>[${esc(g)}]</h4>
+            ${items.map(it=>`
+              <div class="focus-item ${it[1]?'on':''}" onclick="toggleFocus('${esc(g)}','${esc(it[0])}')">
+                <div class="chk">${it[1]?'✓':''}</div>
+                <span class="fname">${esc(it[0])}</span>
+              </div>
+            `).join('')}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('[data-node]').forEach(g=>g.onclick=()=>{
+    activeNode=g.dataset.node;
+    renderOntology();
+    renderLeft();
+  });
+}
+function openWikiFromNode(wid){
+  if(wid)activeWiki=wid;
+  switchNav('wiki');
+}
+
+/* ---------------- Grounded QA Core ---------------- */
+function normalizeText(s){
+  return String(s||'').toLowerCase();
+}
+function unique(arr){
+  return [...new Set(arr)];
+}
+
+/**
+ * 意图识别：实体命中不等于可答。
+ * 例如“台积电26年营收预测”必须识别为 revenue_forecast。
+ */
+function detectQuestionIntent(q){
+  const raw=String(q||'').toLowerCase();
+  const intents=[];
+
+  if(/营收|收入|revenue|sales|营业收入|财收|业绩预测|营收预测|收入预测|forecast|guidance|指引|预估|预测|26年|2026|2026年|二六年/.test(raw)){
+    intents.push('revenue_forecast');
+  }
+
+  if(/利润|毛利|毛利率|净利|eps|盈利|profit|margin/.test(raw)){
+    intents.push('profit_margin');
+  }
+
+  if(/股价|估值|pe|市值|目标价|valuation|price target/.test(raw)){
+    intents.push('valuation_market');
+  }
+
+  if(/n2|gaa|制程|节点|风险试产|量产|process node/.test(raw)){
+    intents.push('process_node');
+  }
+
+  if(/cowos|封装|hbm|chiplet|先进封装|产业链|供应链|基板|设备/.test(raw)){
+    intents.push('packaging_supply_chain');
+  }
+
+  if(/客户|nvidia|英伟达|apple|amd|qualcomm|客户结构/.test(raw)){
+    intents.push('customer_relationship');
+  }
+
+  if(/专家|重点|重要性|本体|expert|priority/.test(raw)){
+    intents.push('expert_ontology');
+  }
+
+  if(/对比|比较|差异|不同|compare|versus|vs/.test(raw)){
+    intents.push('comparison');
+  }
+
+  if(/时间线|事件|扩产|计划|roadmap|timeline/.test(raw)){
+    intents.push('timeline_event');
+  }
+
+  return unique(intents);
+}
+
+/**
+ * 每类意图必须在证据中出现的关键词。
+ * 注意：对于 strict intent，不能只凭 query 里的词算证据，必须 evidenceText 包含。
+ */
+const INTENT_EVIDENCE_KEYWORDS={
+  revenue_forecast:[
+    '营收','收入','revenue','sales','营业收入','营收预测','收入预测',
+    'forecast','guidance','指引','预估','预测','2026 revenue','26年营收','2026年营收'
+  ],
+  profit_margin:[
+    '利润','毛利','毛利率','净利','eps','profit','margin','盈利'
+  ],
+  valuation_market:[
+    '股价','估值','pe','市值','目标价','valuation','price target'
+  ],
+  process_node:[
+    'n2','gaa','制程','节点','风险试产','量产','euv','process'
+  ],
+  packaging_supply_chain:[
+    'cowos','封装','hbm','chiplet','产业链','供应链','基板','设备','先进封装'
+  ],
+  customer_relationship:[
+    '客户','nvidia','英伟达','apple','amd','qualcomm','customer'
+  ],
+  expert_ontology:[
+    '专家','重点','重要性','本体','expertweight','expertnote','expert'
+  ],
+  comparison:[
+    '对比','比较','差异','不同','compare','versus','vs'
+  ],
+  timeline_event:[
+    '时间线','事件','扩产','计划','roadmap','timeline','量产规划'
+  ]
+};
+
+function isStrictEvidenceIntent(intent){
+  return [
+    'revenue_forecast',
+    'profit_margin',
+    'valuation_market'
+  ].includes(intent);
+}
+
+/**
+ * 意图证据检查。
+ * strict intent 必须由 evidenceText 支撑。
+ */
+function intentEvidenceExists(intent,evidence,q){
+  const keywords=INTENT_EVIDENCE_KEYWORDS[intent]||[];
+  if(!keywords.length)return true;
+
+  const evidenceText=evidence.map(e=>normalizeText(e.text)).join(' ');
+
+  return keywords.some(k=>{
+    const kk=normalizeText(k);
+    return evidenceText.includes(kk);
+  });
+}
+
+function buildKnowledgeIndex(){
+  const docs=[];
+
+  Object.values(wikiPages).forEach(w=>{
+    const text=[
+      w.title,w.type,w.summary,
+      ...w.entities,
+      ...w.sections.flat(),
+      ...w.relations.flat()
+    ].join(' ');
+    docs.push({
+      kind:'wiki',
+      id:w.id,
+      title:w.title,
+      source:w.source,
+      text,
+      payload:w
+    });
+  });
+
+  files.forEach(f=>{
+    const text=[f.title,f.name,f.source,f.abstract,...f.facts].join(' ');
+    docs.push({
+      kind:'source',
+      id:f.id,
+      title:f.title,
+      source:f.name,
+      text,
+      payload:f
+    });
+  });
+
+  ontoNodes.forEach(n=>{
+    const related=ontoEdges.filter(e=>e[0]===n.id||e[1]===n.id).flat().join(' ');
+    const text=[n.id,n.type,n.wiki,n.expertNote,related].join(' ');
+    docs.push({
+      kind:'ontology',
+      id:n.id,
+      title:n.id,
+      source:'Ontology Graph',
+      text,
+      payload:n
+    });
+  });
+
+  return docs;
+}
+
+function tokenizeQuestion(q){
+  const raw=String(q||'').toLowerCase();
+
+  const terms=[
+    '台积电','tsmc','n2','n3','n5','cowos','gaa','hbm','nvidia','英伟达','apple','amd','qualcomm',
+    'arizona','fab','euv','光刻','光刻胶','chiplet','soc','hpc','ai','先进封装','制程','产业链',
+    '供应链','风险试产','量产','客户','基板','设备','专家','重点','本体','重要性',
+
+    '营收','收入','revenue','sales','营业收入','营收预测','收入预测','forecast','guidance',
+    '指引','预估','预测','2026','2026年','26年','二六年','利润','毛利','估值','股价'
+  ];
+
+  const hits=terms.filter(t=>raw.includes(t.toLowerCase()));
+  const cnTokens=(raw.match(/[\u4e00-\u9fa5a-z0-9]{2,}/g)||[]).filter(x=>x.length>=2);
+
+  return unique([...hits,...cnTokens]).slice(0,32);
+}
+
+function retrieveEvidence(q){
+  const tokens=tokenizeQuestion(q);
+  const intents=detectQuestionIntent(q);
+  const docs=buildKnowledgeIndex();
+
+  const scored=docs.map(d=>{
+    const text=normalizeText(d.text);
+    let score=0;
+
+    tokens.forEach(t=>{
+      const tt=normalizeText(t);
+      if(text.includes(tt)) score+=2;
+    });
+
+    /**
+     * 专家权重只辅助排序，不能作为 strict intent 的充分证据。
+     */
+    if(d.kind==='ontology'){
+      score+=(d.payload.expertWeight||1)*0.20;
+    }
+
+    if(/专家|重点|重要性|本体/.test(q) && d.kind==='ontology'){
+      score+=1.5;
+    }
+
+    /**
+     * 严格意图如果文档中没有意图关键词，降权。
+     */
+    intents.forEach(intent=>{
+      if(isStrictEvidenceIntent(intent)){
+        const kws=INTENT_EVIDENCE_KEYWORDS[intent]||[];
+        const hasIntentKeyword=kws.some(k=>text.includes(normalizeText(k)));
+        if(!hasIntentKeyword){
+          score-=3;
+        }
+      }
+    });
+
+    return {...d,score};
+  }).filter(d=>d.score>0)
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,8);
+
+  return scored;
+}
+
+function canAnswer(q,evidence){
+  if(!q.trim())return false;
+  if(!evidence.length){
+    window.__refuseReason='当前知识库没有检索到任何相关 Workspace Wiki、源文档片段或本体关系。';
+    return false;
+  }
+
+  const intents=detectQuestionIntent(q);
+
+  const meaningful=evidence.some(e=>e.score>=2);
+  if(!meaningful){
+    window.__refuseReason='当前知识库只存在非常弱的匹配，无法形成可靠证据。';
+    return false;
+  }
+
+  /**
+   * 没识别出特殊意图时，允许普通实体问答。
+   */
+  if(!intents.length)return meaningful;
+
+  /**
+   * 每个意图都要检查 evidence 里是否有对应主题证据。
+   */
+  for(const intent of intents){
+    const exists=intentEvidenceExists(intent,evidence,q);
+
+    if(isStrictEvidenceIntent(intent) && !exists){
+      window.__refuseReason=`当前知识库可能命中了相关实体，但没有找到“${intent}”所需的财务预测、数值、指引或估值类证据。`;
+      return false;
+    }
+
+    if(!exists){
+      window.__refuseReason='当前知识库没有找到与问题意图匹配的证据。';
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function answerFromEvidence(q,evidence){
+  const citations=evidence.map(e=>`${e.kind}:${e.title}`).slice(0,4);
+  lastCitations=citations;
+
+  const highExpert=[...ontoNodes].filter(n=>(n.expertWeight||1)>=4).sort((a,b)=>(b.expertWeight||1)-(a.expertWeight||1));
+
+  if(/专家|重点|重要性|本体/.test(q)){
+    return {
+      answer:`根据专家经验注入层，当前高重要性本体包括：${highExpert.map(n=>`${n.id}（E${n.expertWeight}/5）`).join('、')}。其中，${highExpert[0]?.id||'暂无'} 被设为最高优先级，理由是：${highExpert[0]?.expertNote||'暂无专家理由'}。这些专家权重会影响问答检索排序、图谱节点大小和报告主题优先级。`,
+      citations
+    };
+  }
+
+  if(/n2|gaa|制程|风险试产|量产/i.test(q)){
+    const n2=wikiPages.n2;
+    const node=ontoNodes.find(n=>n.id==='N2');
+    return {
+      answer:`基于 Workspace Wiki 与本体关系，N2 是台积电下一代先进逻辑制程节点，采用 GAA 晶体管结构，已进入风险试产并规划量产。相关本体路径包括：台积电 → usesNode → N2，以及 N2 → usesTechnology → GAA。专家经验层中，N2 当前重要性为 E${node?.expertWeight||1}/5，理由是：${node?.expertNote||'暂无专家理由'}。`,
+      citations:unique([...citations,`wiki:${n2.title}`,`source:${n2.source}`]).slice(0,5)
+    };
+  }
+
+  if(/cowos|封装|hbm|chiplet|产业链|供应链|基板|设备/i.test(q)){
+    const w=wikiPages.cowos;
+    const node=ontoNodes.find(n=>n.id==='CoWoS');
+    return {
+      answer:`基于 CoWoS Workspace Wiki，CoWoS 是台积电主导的 2.5D 先进封装技术，用于连接逻辑芯片与 HBM。产业链包括设计公司、代工厂、封装厂、设备与基板供应商。关键观察点是产能瓶颈、设备交期、基板供应与客户集中度。专家经验层中，CoWoS 当前重要性为 E${node?.expertWeight||1}/5，理由是：${node?.expertNote||'暂无专家理由'}。`,
+      citations:unique([...citations,`wiki:${w.title}`,`source:${w.source}`]).slice(0,5)
+    };
+  }
+
+  if(/台积电|tsmc|客户|nvidia|英伟达|apple|amd|qualcomm/i.test(q)){
+    const w=wikiPages.tsmc;
+    const node=ontoNodes.find(n=>n.id==='台积电');
+    return {
+      answer:`基于台积电 Workspace Wiki，台积电是全球主要晶圆代工企业，业务覆盖先进制程、成熟制程与先进封装。其相关对象包括 N2、CoWoS、GAA、NVIDIA、Apple、AMD 与 Arizona Fab。本体中存在台积电 → usesNode → N2，台积电 → usesTechnology → CoWoS，NVIDIA → customerOf → 台积电等关系。专家经验层中，台积电重要性为 E${node?.expertWeight||1}/5。`,
+      citations:unique([...citations,`wiki:${w.title}`,`source:${w.source}`]).slice(0,5)
+    };
+  }
+
+  const top=evidence[0];
+  return {
+    answer:`我在 XinWiki 工作空间中找到了相关证据，主要来自「${top.title}」。根据已构建的 Workspace Wiki、源文档片段与本体关系，该问题与 ${evidence.map(e=>e.title).slice(0,3).join('、')} 相关。可确认的信息范围仅限于这些来源：${citations.join('；')}。`,
+    citations
+  };
+}
+
+function refuseAnswer(q){
+  const reason=window.__refuseReason || '它没有命中当前 XinWiki 工作空间中的 Workspace Wiki、源文档片段或本体关系。';
+
+  const msg=`抱歉，我不能回答这个问题。${reason} 为避免凭空生成，我已拒绝回答。请先上传包含该问题证据的文档，或在 Workspace Wiki 中补充相关内容后再提问。`;
+
+  lastAnswer='';
+  lastQuestion=q;
+  lastCitations=[];
+  window.__refuseReason='';
+  return msg;
+}
+
+/* ---------------- Ask UI ---------------- */
+function renderAsk(){
+  const historyMarkup=chatMessages.length
+    ? chatMessages.map(renderChatMessage).join('')
+    : `
+      <div class="msg ai">
+        我会先检索 Workspace Wiki、源文档片段与本体关系。只有同时找到实体证据和问题意图证据时才回答。
+        例如“台积电26年营收预测”需要营收预测相关证据；仅命中“台积电”不足以回答。
+        <br><span class="cite">policy: entity match is not enough · intent-level evidence required</span>
+      </div>
+    `;
+  $('view-ask').innerHTML=`
+    <div class="page-title">
+      <div>
+        <h1>问答 · 接地推理</h1>
+        <p class="lead">
+          问答不凭空生成，而是基于已构建的 Workspace Wiki、源文档片段与本体关系回答，并附带可引用来源。
+          每次问答都可以沉淀为问答记录。若用户问题只命中实体、但没有命中问题意图证据，系统将拒绝回答。
+        </p>
+        <div class="tag-row">
+          <span class="tag indigo">entity + intent evidence</span>
+          <span class="tag rose">strict intent no evidence → refuse</span>
+          <span class="tag amber">expert priority enabled</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ask-layout">
+      <div class="chat-shell">
+        <div class="chat-head">
+          <b>XinWiki Chatbot</b>
+          <span class="tag dark">grounded-only QA</span>
+        </div>
+        <div class="chat-body" id="chatBody">
+          ${historyMarkup}
+        </div>
+        <div class="chat-input">
+          <input id="askInput" placeholder="基于知识库提问… 例如：CoWoS 的供应链瓶颈是什么？">
+          <button class="btn" onclick="ask()">发送</button>
+        </div>
+      </div>
+
+      <div class="side-tool">
+        <div class="card pad">
+          <h3 style="font-size:15px">检索与拒答规则</h3>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.8">
+            1. 先检索 Workspace Wiki、源文档与本体。<br>
+            2. 实体命中不等于可回答。<br>
+            3. 财务预测、利润、估值类问题必须有明确证据。<br>
+            4. 找不到意图级证据则拒答。
+          </p>
+        </div>
+
+        <div class="card pad">
+          <h3 style="font-size:15px">沉淀为问答记录</h3>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">仅保存有证据支撑的有效回答。拒答内容不会保存。</p>
+          <textarea id="qaDraft" placeholder="最近一次有效回答会自动填入。"></textarea>
+          <div class="tag-row">
+            <button class="btn" onclick="saveQARecord()">保存记录</button>
+            <button class="btn secondary" onclick="fillLastAnswer()">填入最近回答</button>
+          </div>
+        </div>
+
+        <div class="card pad">
+          <h3 style="font-size:15px">本地记忆</h3>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">记忆进入本地时间线，不默认写入本体。</p>
+          <select id="memoryPeriod">
+            <option>永久记忆</option>
+            <option>30天</option>
+            <option>7天</option>
+            <option>本次会话</option>
+          </select>
+          <textarea id="memoryInput" placeholder="例如：持续跟踪 CoWoS 产能与基板供应。"></textarea>
+          <button class="btn teal" onclick="addMemory()">保存记忆</button>
+        </div>
+
+        <div class="card pad">
+          <h3 style="font-size:15px">记忆时间线</h3>
+          <div class="timeline" id="memoryTimeline" style="margin-top:14px"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  renderMemory();
+}
+function quickAsk(q){
+  switchNav('ask');
+  setTimeout(()=>{
+    $('askInput').value=q;
+    ask();
+  },60);
+}
+async function ask(){
+  const input=$('askInput'),q=input.value.trim();
+  if(!q)return;
+
+  const body=$('chatBody');
+  body.insertAdjacentHTML('beforeend',`<div class="msg user">${esc(q)}</div>`);
+  input.value='';
+  try{
+    const result=await api('/api/chat/message',{
+      method:'POST',
+      body:JSON.stringify({question:q})
+    });
+    chatThread=result.thread||chatThread;
+    chatMessages=result.messages||chatMessages;
+    lastQuestion=q;
+    lastAnswer=result.answer;
+    lastCitations=result.citations||[];
+    body.innerHTML=chatMessages.length?chatMessages.map(renderChatMessage).join(''):'';
+    body.scrollTop=body.scrollHeight;
+    const d=$('qaDraft');
+    if(d)d.value=`Q: ${q}\n\nA: ${result.answer}\n\nCitations: ${(result.citations||[]).join(' | ')}`;
+  }catch(err){
+    body.insertAdjacentHTML('beforeend',`
+      <div class="msg refuse">
+        ${esc(err.message)}<br>
+        <span class="cite">request failed</span>
+      </div>
+    `);
+    body.scrollTop=body.scrollHeight;
+  }
+}
+function fillLastAnswer(){
+  $('qaDraft').value=lastAnswer
+    ? `Q: ${lastQuestion}\n\nA: ${lastAnswer}\n\nCitations: ${lastCitations.join(' | ')}`
+    : '暂无最近有效回答。';
+}
+async function saveQARecord(){
+  const txt=$('qaDraft').value.trim();
+  if(!txt || !lastAnswer){
+    toast('没有可保存的有效问答。拒答内容不会沉淀为问答记录');
+    return;
+  }
+  try{
+    await api('/api/qa-records',{
+      method:'POST',
+      body:JSON.stringify({
+        question:lastQuestion||'手动记录',
+        answer:lastAnswer,
+        citations:lastCitations
+      })
+    });
+    await loadBootstrap();
+    toast('问答记录已保存，可用于报告生成');
+    renderLeft();
+  }catch(err){
+    toast(err.message);
+  }
+}
+async function addMemory(){
+  const txt=$('memoryInput').value.trim();
+  if(!txt)return;
+  try{
+    await api('/api/memories',{
+      method:'POST',
+      body:JSON.stringify({
+        text:txt,
+        period:$('memoryPeriod').value
+      })
+    });
+    $('memoryInput').value='';
+    await loadBootstrap();
+    renderMemory();
+    toast('记忆已保存');
+  }catch(err){
+    toast(err.message);
+  }
+}
+function renderMemory(){
+  const el=$('memoryTimeline');
+  if(!el)return;
+  el.innerHTML=memories.map(m=>`
+    <div class="tl">
+      <time>${esc(m.time)}</time>
+      <p>${esc(m.text)}</p>
+    </div>
+  `).join('');
+}
+
+/* ---------------- Charts ---------------- */
+function chartRoadmap(){
+  return `
+    <div class="chart-card enhanced">
+      <div class="chart-title">台积电先进制程路线图</div>
+      <div class="chart-sub">从成熟先进节点到 N2 GAA：性能、量产阶段与战略价值</div>
+      <svg viewBox="0 0 760 260">
+        <defs>
+          <linearGradient id="roadGrad" x1="0" x2="1">
+            <stop offset="0%" stop-color="#5b6ef5"/>
+            <stop offset="55%" stop-color="#8b5cf6"/>
+            <stop offset="100%" stop-color="#2dd4bf"/>
+          </linearGradient>
+          <filter id="softShadow"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#5b6ef5" flood-opacity=".18"/></filter>
+        </defs>
+        <line x1="70" y1="124" x2="690" y2="124" stroke="#dfe3ee" stroke-width="8" stroke-linecap="round"/>
+        <line x1="70" y1="124" x2="570" y2="124" stroke="url(#roadGrad)" stroke-width="8" stroke-linecap="round"/>
+        ${[
+          ['N7','成熟节点','高良率 / 成本稳定',80,'#94a3b8',70],
+          ['N5','规模量产','高端移动 / HPC',225,'#5b6ef5',82],
+          ['N3','量产爬坡','先进 SoC / AI',370,'#8b5cf6',88],
+          ['N2','风险试产','GAA / 下一代逻辑',520,'#38bdf8',94],
+          ['N2+','规划阶段','性能与功耗优化',665,'#2dd4bf',76]
+        ].map(p=>`
+          <g filter="url(#softShadow)">
+            <circle cx="${p[3]}" cy="124" r="18" fill="${p[4]}"/>
+            <circle cx="${p[3]}" cy="124" r="8" fill="#fff" opacity=".92"/>
+          </g>
+          <text class="bar-label" x="${p[3]}" y="78" text-anchor="middle" style="font-size:14px;font-weight:700">${p[0]}</text>
+          <text class="axis" x="${p[3]}" y="98" text-anchor="middle">${p[1]}</text>
+          <text class="axis" x="${p[3]}" y="156" text-anchor="middle">${p[2]}</text>
+          <rect x="${p[3]-28}" y="178" width="56" height="${p[5]*.55}" rx="8" fill="${p[4]}" opacity=".22"/>
+          <rect x="${p[3]-28}" y="${178+(100-p[5])*.55}" width="56" height="${p[5]*.55}" rx="8" fill="${p[4]}" opacity=".8"/>
+          <text class="axis" x="${p[3]}" y="244" text-anchor="middle">战略强度 ${p[5]}</text>
+        `).join('')}
+      </svg>
+    </div>
+  `;
+}
+function chartCompare(){
+  return `
+    <div class="chart-card enhanced">
+      <div class="chart-title">先进制造与封装竞争力矩阵</div>
+      <div class="chart-sub">TSMC、Samsung、Intel 在节点、封装、客户与生态上的横向比较</div>
+      <svg viewBox="0 0 760 300">
+        ${['先进节点','先进封装','客户广度','生态成熟','量产确定性'].map((d,i)=>`
+          <text class="axis" x="48" y="${58+i*44}">${d}</text>
+          <line class="grid-line" x1="150" y1="${52+i*44}" x2="700" y2="${52+i*44}"/>
+        `).join('')}
+        ${[
+          ['TSMC',[94,92,96,95,90],'#5b6ef5',0],
+          ['Samsung',[80,74,68,72,70],'#8b5cf6',1],
+          ['Intel',[78,82,62,70,66],'#2dd4bf',2]
+        ].map((c,ci)=>c[1].map((v,i)=>`
+          <rect x="150" y="${38+i*44+ci*10}" width="${v*5.1}" height="8" rx="4" fill="${c[2]}" opacity="${ci===0?'.9':ci===1?'.62':'.72'}"/>
+        `).join('')).join('')}
+        ${[
+          ['TSMC','#5b6ef5',190],
+          ['Samsung','#8b5cf6',280],
+          ['Intel','#2dd4bf',390]
+        ].map(x=>`
+          <circle cx="${x[2]}" cy="268" r="6" fill="${x[1]}"/>
+          <text class="axis" x="${x[2]+12}" y="272">${x[0]}</text>
+        `).join('')}
+      </svg>
+      <table style="margin-top:12px">
+        <thead><tr><th>维度</th><th>TSMC</th><th>Samsung</th><th>Intel</th></tr></thead>
+        <tbody>
+          <tr><td>先进节点</td><td>N2 / GAA</td><td>SF2 / GAA</td><td>18A</td></tr>
+          <tr><td>先进封装</td><td>CoWoS / SoIC</td><td>I-Cube / X-Cube</td><td>Foveros / EMIB</td></tr>
+          <tr><td>客户结构</td><td>Apple / NVIDIA / AMD</td><td>自用 + 外部客户</td><td>自用为主，代工扩张中</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+function chartTimeline(){
+  return `
+    <div class="chart-card enhanced">
+      <div class="chart-title">关键事件时间线</div>
+      <div class="chart-sub">围绕 N2、CoWoS、扩产与 AI/HPC 需求的事件演进</div>
+      <svg viewBox="0 0 760 310">
+        <defs>
+          <linearGradient id="timeGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#5b6ef5"/>
+            <stop offset="55%" stop-color="#8b5cf6"/>
+            <stop offset="100%" stop-color="#2dd4bf"/>
+          </linearGradient>
+        </defs>
+        <line x1="92" y1="42" x2="92" y2="260" stroke="url(#timeGrad)" stroke-width="5" stroke-linecap="round"/>
+        ${[
+          ['2024 H2','CoWoS 产能扩张加速','AI GPU 与 HBM 集成需求拉动先进封装',60,'#5b6ef5'],
+          ['2025 H1','N2 风险试产','GAA 晶体管结构进入先进逻辑节点验证',120,'#38bdf8'],
+          ['2025 H2','Arizona Fab 扩产推进','区域化制造布局增强供应韧性',180,'#8b5cf6'],
+          ['2026','N2 量产规划','HPC / AI / 高端移动 SoC 导入窗口',240,'#2dd4bf']
+        ].map(p=>`
+          <circle cx="92" cy="${p[3]}" r="13" fill="${p[4]}" opacity=".95"/>
+          <circle cx="92" cy="${p[3]}" r="5" fill="#fff"/>
+          <rect x="130" y="${p[3]-28}" width="520" height="56" rx="14" fill="#fff" stroke="#e9ecf3"/>
+          <text class="bar-label" x="154" y="${p[3]-7}" style="font-weight:700">${p[0]} · ${p[1]}</text>
+          <text class="axis" x="154" y="${p[3]+13}">${p[2]}</text>
+        `).join('')}
+      </svg>
+    </div>
+  `;
+}
+function chartSupply(){
+  return `
+    <div class="chart-card enhanced">
+      <div class="chart-title">CoWoS 供应链结构与受益强度</div>
+      <div class="chart-sub">从设计需求、先进封装、HBM 集成到基板与设备瓶颈</div>
+      <svg viewBox="0 0 760 340">
+        <defs>
+          <linearGradient id="supplyGrad" x1="0" x2="1">
+            <stop offset="0%" stop-color="#5b6ef5"/>
+            <stop offset="100%" stop-color="#2dd4bf"/>
+          </linearGradient>
+        </defs>
+        ${[
+          ['AI/HPC 客户','NVIDIA / AMD / Broadcom',96,72,'#5b6ef5'],
+          ['代工与先进封装','TSMC · CoWoS',94,132,'#8b5cf6'],
+          ['HBM 存储集成','HBM3E / HBM4',88,192,'#2dd4bf'],
+          ['基板 / 中介层','ABF / Silicon Interposer',78,252,'#f59e0b']
+        ].map(d=>`
+          <rect x="70" y="${d[3]-28}" width="250" height="56" rx="16" fill="#fff" stroke="#e9ecf3"/>
+          <circle cx="98" cy="${d[3]}" r="13" fill="${d[4]}"/>
+          <text class="bar-label" x="122" y="${d[3]-5}" style="font-weight:700">${d[0]}</text>
+          <text class="axis" x="122" y="${d[3]+14}">${d[1]}</text>
+          <rect x="390" y="${d[3]-12}" width="250" height="24" rx="12" fill="#eef0ff"/>
+          <rect x="390" y="${d[3]-12}" width="${d[2]*2.45}" height="24" rx="12" fill="${d[4]}" opacity=".86"/>
+          <text class="bar-label" x="656" y="${d[3]+4}">${d[2]}</text>
+        `).join('')}
+        ${[
+          [320,72,390,132],
+          [320,132,390,192],
+          [320,192,390,252]
+        ].map(l=>`
+          <path d="M${l[0]} ${l[1]} C350 ${l[1]},360 ${l[3]},${l[2]} ${l[3]}" fill="none" stroke="url(#supplyGrad)" stroke-width="2.2" opacity=".65"/>
+        `).join('')}
+        <text class="axis" x="390" y="40">受益 / 紧张度指数</text>
+      </svg>
+    </div>
+  `;
+}
+function chartRadar(){
+  return `
+    <div class="chart-card enhanced">
+      <div class="chart-title">产业观察雷达图</div>
+      <div class="chart-sub">综合衡量制程、封装、客户、供应链与专家权重</div>
+      <svg viewBox="0 0 420 340">
+        <defs>
+          <linearGradient id="radarFill" x1="0" x2="1">
+            <stop offset="0%" stop-color="#5b6ef5" stop-opacity=".38"/>
+            <stop offset="100%" stop-color="#2dd4bf" stop-opacity=".28"/>
+          </linearGradient>
+        </defs>
+        ${[40,70,100,130].map(r=>`
+          <polygon points="
+            ${210},${170-r}
+            ${210+r*.95},${170-r*.31}
+            ${210+r*.59},${170+r*.81}
+            ${210-r*.59},${170+r*.81}
+            ${210-r*.95},${170-r*.31}
+          " fill="none" stroke="#dfe3ee"/>
+        `).join('')}
+        ${[
+          ['先进制程',210,24],
+          ['先进封装',354,123],
+          ['客户需求',300,296],
+          ['供应韧性',120,296],
+          ['专家权重',66,123]
+        ].map(x=>`<text class="axis" x="${x[1]}" y="${x[2]}" text-anchor="middle">${x[0]}</text>`).join('')}
+        <polygon points="210,48 332,130 285,272 130,260 88,128" fill="url(#radarFill)" stroke="#5b6ef5" stroke-width="2.4"/>
+        <circle cx="210" cy="48" r="5" fill="#5b6ef5"/>
+        <circle cx="332" cy="130" r="5" fill="#8b5cf6"/>
+        <circle cx="285" cy="272" r="5" fill="#2dd4bf"/>
+        <circle cx="130" cy="260" r="5" fill="#f59e0b"/>
+        <circle cx="88" cy="128" r="5" fill="#38bdf8"/>
+      </svg>
+    </div>
+  `;
+}
+function selectedChartHtml(){
+  if(activeChart==='roadmap')return chartRoadmap();
+  if(activeChart==='compare')return chartCompare();
+  if(activeChart==='timeline')return chartTimeline();
+  if(activeChart==='supply')return chartSupply();
+  return chartRoadmap();
+}
+
+/* ---------------- Generate ---------------- */
+function setScope(s){activeScope=s;renderGenerate();renderLeft()}
+function setModel(m){activeModel=m;renderGenerate();renderLeft()}
+function setChart(c){activeChart=c;renderGenerate();renderLeft()}
+function setReportType(t){activeReportType=t;renderGenerate()}
+
+function renderGenerate(){
+  $('view-generate').innerHTML=`
+    <div class="page-title">
+      <div>
+        <h1>报告生成</h1>
+        <p class="lead">
+          XinWiki 的报告生成会从工作空间 Wiki、源文档、本体图谱、专家经验与问答记录中组装可追溯的图表、PPT 大纲与研究报告。
+          专家标记的重要本体会被优先纳入报告主线。
+        </p>
+        <div class="model-bar">
+          ${['deepseek v4 pro','glm5.1','kimi-k2.6'].map(m=>`
+            <span class="model-pill ${activeModel===m?'active':''}" onclick="setModel('${m}')">${m}</span>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>数据范围</h2>
+      <div class="scope-box">
+        ${[
+          ['wiki','Workspace Wiki','基于结构化知识页生成'],
+          ['ontology','本体图谱','基于实体关系与专家权重生成'],
+          ['sources','源文档','基于原始解析文档生成'],
+          ['qa','问答记录','基于已有问答结论生成']
+        ].map(x=>`
+          <div class="scope ${activeScope===x[0]?'active':''}" onclick="setScope('${x[0]}')">
+            <b>${x[1]}</b>
+            <p>${x[2]}</p>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>报告类型</h2>
+      <div class="report-types">
+        ${[
+          ['company','🏢','公司分析报告','概况、产品、客户、产能、技术路线'],
+          ['tech','⚙️','技术专题报告','技术定义、产业链、玩家、趋势'],
+          ['supply','🔗','供应链报告','上游材料、设备、制造、客户关系'],
+          ['compete','📊','竞争格局报告','玩家对比、节点布局、路线图'],
+          ['weekly','📅','周报 / 月报','新增文档、重要事件、重点变化'],
+          ['ppt','🖥️','PPT 简报','自动生成章节大纲与页面内容']
+        ].map(x=>`
+          <div class="rt-card ${activeReportType===x[0]?'active':''}" onclick="setReportType('${x[0]}')">
+            <div class="rt-ic">${x[1]}</div>
+            <div><b>${x[2]}</b><p>${x[3]}</p></div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>图表类型</h2>
+      <div class="chart-boxes">
+        ${[
+          ['roadmap','技术路线图','N7 → N5 → N3 → N2'],
+          ['compare','公司对比矩阵','多个 Wiki 页面横向对比'],
+          ['timeline','事件时间线','扩产、量产、合作事件'],
+          ['supply','供应链结构图','环节与受益强度']
+        ].map(x=>`
+          <div class="chart-choice ${activeChart===x[0]?'active':''}" onclick="setChart('${x[0]}')">
+            <b>${x[1]}</b>
+            <p>${x[2]}</p>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>生成</h2>
+      <div class="gen-actions">
+        <button class="btn" onclick="generateDoc('report')">生成研究报告</button>
+        <button class="btn teal" onclick="generateDoc('ppt')">生成 PPT 大纲</button>
+        <button class="btn secondary" onclick="generateDoc('md')">生成 Markdown</button>
+        <button class="btn ghost" onclick="generateDoc('export')">导出 Word / PDF</button>
+      </div>
+    </div>
+
+    <div id="genOutput"></div>
+  `;
+}
+
+function expertSummaryHtml(){
+  const top=[...ontoNodes].sort((a,b)=>(b.expertWeight||1)-(a.expertWeight||1)).slice(0,5);
+  return `
+    <table>
+      <thead><tr><th>专家重点本体</th><th>重要性</th><th>理由</th></tr></thead>
+      <tbody>
+        ${top.map(n=>`
+          <tr>
+            <td>${esc(n.id)}</td>
+            <td><span class="tag amber">E${n.expertWeight||1} · ${weightLabel(n.expertWeight||1)}</span></td>
+            <td style="color:var(--muted)">${esc(n.expertNote||'暂无')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+async function copyText(text,label){
+  try{
+    await navigator.clipboard.writeText(text);
+    toast(`${label}已复制`);
+  }catch(err){
+    toast(`${label}复制失败`);
+  }
+}
+function copyGeneratedMarkdown(label='Markdown '){
+  if(!generatedReportMarkdown){
+    toast('暂无可复制内容');
+    return;
+  }
+  copyText(generatedReportMarkdown,label);
+}
+function reportMetricsHtml(metrics){
+  return `
+    <div class="report-hero-grid">
+      ${(metrics||[]).map(metric=>`
+        <div class="report-metric">
+          <b>${esc(metric.value)}</b>
+          <span>${esc(metric.label)} · ${esc(metric.detail||'')}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+function reportSectionsHtml(report){
+  return (report.sections||[]).map(section=>`
+    <div class="card pad">
+      <h3 style="font-size:17px;margin-bottom:10px">${esc(section.title)}</h3>
+      <p style="color:var(--muted);line-height:1.9">${esc(section.body||'')}</p>
+      ${(section.bullets||[]).length?`
+        <ul style="margin-top:12px;color:var(--muted);line-height:1.8">
+          ${(section.bullets||[]).map(item=>`<li>${esc(item)}</li>`).join('')}
+        </ul>
+      `:''}
+      ${(section.citations||[]).length?`
+        <div class="source-footnotes" style="margin-top:12px">
+          <p>引用：${(section.citations||[]).map(esc).join(' · ')}</p>
+        </div>
+      `:''}
+    </div>
+  `).join('');
+}
+function reportOutlineHtml(report){
+  return `
+    <div class="ppt-board">
+      ${(report.outline||[]).map((item,index)=>`
+        <div class="ppt-slide-card">
+          <div class="ppt-slide-no">SLIDE ${String(index+1).padStart(2,'0')}</div>
+          <h4>${esc(item)}</h4>
+          <p>基于 ${esc(scopeLabel(activeScope))} 与 ${esc(chartLabel(activeChart))} 自动生成的页面纲要。</p>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+function renderReportOutput(type,payload){
+  const out=$('genOutput');
+  const report=payload.report||{};
+  const markdown=payload.markdown||'';
+  generatedReportMarkdown=markdown;
+  const meta=`model: ${activeModel} · scope: ${scopeLabel(activeScope)} · chart: ${chartLabel(activeChart)} · generated: ${payload.generatedAt||'now'}`;
+
+  if(type==='md'){
+    out.innerHTML=`
+      <div class="output">
+        <div class="output-head">
+          <div>
+            <b>${esc(report.title||'XinWiki Markdown')}</b>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">${esc(meta)}</div>
+          </div>
+          <div class="gen-actions">
+            <button class="btn secondary" onclick="copyGeneratedMarkdown('Markdown ')">复制 Markdown</button>
+          </div>
+        </div>
+        <div class="output-body">
+          <div class="card pad">
+            <pre style="white-space:pre-wrap;line-height:1.8;color:var(--muted);font-family:var(--mono)">${esc(markdown)}</pre>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  out.innerHTML=`
+    <div class="output">
+      <div class="output-head">
+        <div>
+          <b>${esc(report.title||'XinWiki 结构化报告')}</b>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">${esc(meta)}</div>
+        </div>
+        <div class="gen-actions">
+          <button class="btn secondary" onclick="copyGeneratedMarkdown('报告 Markdown ')">复制 Markdown</button>
+          <button class="btn secondary" onclick="toast('Word / PDF 导出将在后续任务中接入')">导出 Word / PDF</button>
+        </div>
+      </div>
+      <div class="output-body">
+        <div class="report-hero">
+          <h3>${esc(report.summary||'已根据当前工作空间生成结构化报告')}</h3>
+          <p>本报告内容来自当前工作空间的源文档、Wiki、本体图谱、专家经验与问答记录，并由后端生成结构化输出。</p>
+          ${reportMetricsHtml(report.metrics)}
+        </div>
+
+        <div class="report-section-title">
+          <h3>结构化正文</h3>
+          <span>${esc(report.reportType||type)}</span>
+        </div>
+        ${reportSectionsHtml(report)}
+
+        ${type==='ppt'?`
+          <div class="report-section-title">
+            <h3>PPT 大纲</h3>
+            <span>backend generated outline</span>
+          </div>
+          ${reportOutlineHtml(report)}
+        `:''}
+
+        ${(report.citations||[]).length?`
+          <div class="source-footnotes">
+            <p>Sources: ${(report.citations||[]).map(esc).join(' · ')}</p>
+            <p>Traceability: 结构化报告由后端基于工作空间当前状态实时生成。</p>
+          </div>
+        `:''}
+      </div>
+    </div>
+  `;
+}
+function renderExportOutput(exports){
+  $('genOutput').innerHTML=`
+    <div class="output">
+      <div class="output-head">
+        <div>
+          <b>XinWiki 导出产物</b>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:4px">
+            scope: ${scopeLabel(activeScope)} · chart: ${chartLabel(activeChart)} · model: ${activeModel}
+          </div>
+        </div>
+      </div>
+      <div class="output-body">
+        <div class="grid two">
+          ${exports.map(item=>`
+            <div class="card pad">
+              <h3 style="font-size:16px">${esc(item.format.toUpperCase())}</h3>
+              <p style="color:var(--muted);margin-top:8px">${esc(item.fileName)}</p>
+              <div class="gen-actions" style="margin-top:14px">
+                <a class="btn" href="${esc(item.downloadUrl)}" target="_blank" rel="noreferrer">下载文件</a>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+async function generateDoc(type){
+  const out=$('genOutput');
+  if(type==='export'){
+    out.innerHTML=`<div class="card pad">导出中…</div>`;
+    try{
+      const [docx,pdf]=await Promise.all([
+        api('/api/reports/export',{
+          method:'POST',
+          body:JSON.stringify({
+            scope:activeScope,
+            reportType:activeReportType,
+            chartType:activeChart,
+            model:activeModel,
+            exportFormat:'docx'
+          })
+        }),
+        api('/api/reports/export',{
+          method:'POST',
+          body:JSON.stringify({
+            scope:activeScope,
+            reportType:activeReportType,
+            chartType:activeChart,
+            model:activeModel,
+            exportFormat:'pdf'
+          })
+        })
+      ]);
+      renderExportOutput([docx,pdf]);
+      toast('Word / PDF 已生成');
+    }catch(err){
+      out.innerHTML=`<div class="card pad" style="color:var(--danger)">${esc(err.message)}</div>`;
+    }
+    return;
+  }
+  out.innerHTML=`<div class="card pad">报告生成中…</div>`;
+  try{
+    const payload=await api('/api/reports/generate',{
+      method:'POST',
+      body:JSON.stringify({
+        scope:activeScope,
+        reportType:activeReportType,
+        chartType:activeChart,
+        model:activeModel,
+        format:type
+      })
+    });
+    renderReportOutput(type,payload);
+  }catch(err){
+    out.innerHTML=`<div class="card pad" style="color:var(--danger)">${esc(err.message)}</div>`;
+  }
+}
+
+/* ---------------- Search ---------------- */
+function wireSearch(){
+  const input=$('searchInput');
+
+  input.addEventListener('keydown',e=>{
+    if(e.key!=='Enter')return;
+    const q=input.value.trim().toLowerCase();
+    if(!q)return;
+
+    const wikiHit=Object.values(wikiPages).find(w=>
+      w.title.toLowerCase().includes(q)||
+      w.summary.toLowerCase().includes(q)||
+      w.entities.some(x=>x.toLowerCase().includes(q))
+    );
+    if(wikiHit){
+      activeWiki=wikiHit.id;
+      switchNav('wiki');
+      toast('跳转 Wiki：'+wikiHit.title);
+      return;
+    }
+
+    const fileHit=files.find(f=>
+      f.title.toLowerCase().includes(q)||
+      f.abstract.toLowerCase().includes(q)||
+      f.name.toLowerCase().includes(q)
+    );
+    if(fileHit){
+      activeFile=fileHit.id;
+      switchNav('sources');
+      toast('跳转来源：'+fileHit.title);
+      return;
+    }
+
+    const nodeHit=ontoNodes.find(n=>n.id.toLowerCase().includes(q)||n.type.toLowerCase().includes(q));
+    if(nodeHit){
+      activeNode=nodeHit.id;
+      switchNav('ontology');
+      toast('跳转本体节点：'+nodeHit.id);
+      return;
+    }
+
+    toast('未找到。试试：台积电 / N2 / CoWoS / HBM / GAA');
+  });
+
+  document.addEventListener('keydown',e=>{
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){
+      e.preventDefault();
+      input.focus();
+    }
+  });
+}
+
+/* ---------------- Boot ---------------- */
+function boot(){
+  renderTopbarState();
+  renderRail();
+  renderLeft();
+  renderSources();
+  renderWiki();
+  renderOntology();
+  renderAsk();
+  renderGenerate();
+  wireSearch();
+
+  $('fileInput').addEventListener('change',e=>{
+    handleFiles(e.target.files);
+    e.target.value='';
+  });
+
+  checkSession();
+  setTimeout(()=>toast('XinWiki 已就绪 · Backend Connected'),700);
+}
+
+boot();
+</script>
+</body>
+</html>
