@@ -141,6 +141,58 @@ export function renderReportHtml(report) {
   `;
 }
 
+
+function escapePdfText(value) {
+  return String(value || "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("(", "\\(")
+    .replaceAll(")", "\\)");
+}
+
+function buildFallbackPdfBuffer(text) {
+  const lines = String(text || "XinWiki Report")
+    .split("\n")
+    .slice(0, 46)
+    .map((line) => line.length > 86 ? `${line.slice(0, 83)}...` : line);
+  const streamLines = ["BT", "/F1 11 Tf", "50 790 Td"];
+  lines.forEach((line, index) => {
+    if (index > 0) {
+      streamLines.push("0 -16 Td");
+    }
+    streamLines.push(`(${escapePdfText(line)}) Tj`);
+  });
+  streamLines.push("ET");
+  const stream = streamLines.join("\n");
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+    `5 0 obj\n<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ];
+  let offset = Buffer.byteLength("%PDF-1.4\n", "utf8");
+  const xref = ["0000000000 65535 f "];
+  for (const obj of objects) {
+    xref.push(`${String(offset).padStart(10, "0")} 00000 n `);
+    offset += Buffer.byteLength(obj, "utf8");
+  }
+  const body = objects.join("");
+  const xrefOffset = Buffer.byteLength("%PDF-1.4\n" + body, "utf8");
+  const pdf = [
+    "%PDF-1.4",
+    body.trimEnd(),
+    "xref",
+    `0 ${xref.length}`,
+    ...xref,
+    "trailer",
+    `<< /Size ${xref.length} /Root 1 0 R >>`,
+    "startxref",
+    String(xrefOffset),
+    "%%EOF",
+  ].join("\n");
+  return Buffer.from(pdf, "utf8");
+}
+
 function reportBaseName(report) {
   return slugifyFileName(report.title || "xinwiki-report") || "xinwiki-report";
 }
@@ -151,14 +203,22 @@ export async function exportReportAsDocx({ outputDir, report }) {
   const outputPath = path.join(outputDir, fileName);
   const tempHtmlPath = path.join(outputDir, `${reportBaseName(report)}.html`);
   await fs.writeFile(tempHtmlPath, renderReportHtml(report), "utf8");
-  await execFileAsync("/usr/bin/textutil", [
-    "-convert",
-    "docx",
-    tempHtmlPath,
-    "-output",
-    outputPath,
-  ]);
-  await fs.rm(tempHtmlPath, { force: true });
+  try {
+    await execFileAsync("/usr/bin/textutil", [
+      "-convert",
+      "docx",
+      tempHtmlPath,
+      "-output",
+      outputPath,
+    ]);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+    await fs.writeFile(outputPath, renderReportHtml(report), "utf8");
+  } finally {
+    await fs.rm(tempHtmlPath, { force: true });
+  }
 
   return { fileName, outputPath };
 }
@@ -169,18 +229,26 @@ export async function exportReportAsPdf({ outputDir, report }) {
   const outputPath = path.join(outputDir, fileName);
   const tempTextPath = path.join(outputDir, `${reportBaseName(report)}.txt`);
   await fs.writeFile(tempTextPath, renderReportPlainText(report), "utf8");
-  const { stdout } = await execFileAsync("/usr/sbin/cupsfilter", [
-    "-i",
-    "text/plain",
-    "-m",
-    "application/pdf",
-    tempTextPath,
-  ], {
-    encoding: "buffer",
-    maxBuffer: 20 * 1024 * 1024,
-  });
-  await fs.writeFile(outputPath, stdout);
-  await fs.rm(tempTextPath, { force: true });
+  try {
+    const { stdout } = await execFileAsync("/usr/sbin/cupsfilter", [
+      "-i",
+      "text/plain",
+      "-m",
+      "application/pdf",
+      tempTextPath,
+    ], {
+      encoding: "buffer",
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    await fs.writeFile(outputPath, stdout);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+    await fs.writeFile(outputPath, buildFallbackPdfBuffer(renderReportPlainText(report)));
+  } finally {
+    await fs.rm(tempTextPath, { force: true });
+  }
 
   return { fileName, outputPath };
 }

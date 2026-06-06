@@ -11,22 +11,37 @@ function topExpertNodes(ontologyNodes = []) {
 function collectHighlights(bootstrap) {
   const highlights = [];
 
-  for (const file of bootstrap.files.slice(0, 3)) {
+  for (const record of bootstrap.qaRecords.slice(0, 4)) {
+    if (record.answer) {
+      highlights.push(`问答结论：${record.answer}`);
+    }
+  }
+
+  for (const file of bootstrap.files.slice(0, 4)) {
     if (file.abstract) {
-      highlights.push(file.abstract);
+      highlights.push(`源文档摘要：${file.abstract}`);
     }
     for (const fact of file.facts || []) {
-      highlights.push(fact);
+      highlights.push(`源文档事实：${fact}`);
     }
   }
 
-  for (const wikiPage of bootstrap.wikiPages.slice(0, 3)) {
+  for (const wikiPage of bootstrap.wikiPages.slice(0, 4)) {
     if (wikiPage.summary) {
-      highlights.push(wikiPage.summary);
+      highlights.push(`Wiki 结论：${wikiPage.summary}`);
     }
   }
 
-  return unique(highlights).slice(0, 8);
+  return unique(highlights).slice(0, 10);
+}
+
+function evidenceLabel(bootstrap) {
+  const labels = [
+    ...bootstrap.qaRecords.slice(0, 3).map((record) => `qa:${record.question}`),
+    ...bootstrap.files.slice(0, 3).map((file) => `source:${file.name}`),
+    ...bootstrap.wikiPages.slice(0, 3).map((page) => `wiki:${page.title}`),
+  ];
+  return unique(labels);
 }
 
 function formatSectionMarkdown(section) {
@@ -60,10 +75,10 @@ export function buildReportPackage({ workspace, bootstrap, options }) {
     ...expertNodes.map((node) => node.id),
     ...bootstrap.wikiPages.flatMap((page) => page.entities || []).slice(0, 6),
   ]).slice(0, 6);
+  const trackedEntityText = trackedEntities.length ? trackedEntities.join("、") : "当前已上传/沉淀的工作空间证据";
 
   const citations = unique([
-    ...bootstrap.files.slice(0, 3).map((file) => `source:${file.name}`),
-    ...bootstrap.wikiPages.slice(0, 3).map((page) => `wiki:${page.title}`),
+    ...evidenceLabel(bootstrap),
     ...bootstrap.ontologyEdges.slice(0, 3).map((edge) => `edge:${edge.join(" -> ")}`),
   ]);
 
@@ -78,8 +93,8 @@ export function buildReportPackage({ workspace, bootstrap, options }) {
     {
       title: "核心结论",
       body:
-        `${workspace.name} 当前的报告主线聚焦于 ${trackedEntities.join("、")}。` +
-        ` 本次生成基于 ${scopeLabel} 范围，优先提炼已结构化的 Wiki、来源摘要和本体关系。`,
+        `${workspace.name} 当前的报告主线聚焦于 ${trackedEntityText}。` +
+        ` 本次生成严格基于 ${scopeLabel} 范围内的问答结论、用户源文档、Wiki 摘要和本体关系，不引入工作空间外事实。`,
       bullets: highlights.slice(0, 4),
       citations,
     },
@@ -102,6 +117,7 @@ export function buildReportPackage({ workspace, bootstrap, options }) {
         "跟踪重点来源的新增事实与摘要变化",
         "关注高权重本体关联的关系边新增或变更",
         "将高质量问答沉淀为报告补充证据",
+        "生成 PPT、简报、图片说明等衍生内容时继续保留来源与问答引用",
       ],
       citations: bootstrap.qaRecords.slice(0, 2).map((record) => `qa:${record.question}`),
     },
@@ -145,6 +161,7 @@ export function buildReportPackage({ workspace, bootstrap, options }) {
       sections,
       outline,
       citations,
+      evidence: citations,
     },
     markdown,
   };

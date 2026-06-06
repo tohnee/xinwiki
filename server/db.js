@@ -519,10 +519,14 @@ function buildApi(db) {
     }
 
     for (const record of DEMO_WORKSPACE.qaRecords) {
-      statements.insertQaRecord.run({
+      const payload = {
         id: record.id || createId("qa"),
+        ...record,
+      };
+      statements.insertQaRecord.run({
+        id: entityRowId(workspaceId, payload.id),
         workspaceId,
-        payloadJson: JSON.stringify(record),
+        payloadJson: JSON.stringify(payload),
         createdAt,
         updatedAt: createdAt,
       });
@@ -708,7 +712,7 @@ function buildApi(db) {
         ...record,
       };
       statements.insertQaRecord.run({
-        id: enriched.id,
+        id: entityRowId(workspaceId, enriched.id),
         workspaceId,
         payloadJson: JSON.stringify(enriched),
         createdAt,
