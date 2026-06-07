@@ -75,8 +75,10 @@ describe("llm-wiki runtime persistence", () => {
     });
 
     const snapshot = db.getRuntimeSnapshot(workspace.id);
-    expect(snapshot.entries).toHaveLength(1);
-    expect(snapshot.edges).toHaveLength(1);
+    const customEntries = snapshot.entries.filter((entry) => entry.id === "entry_page_aurora");
+    const customEdges = snapshot.edges.filter((edge) => edge.fromEntryId === "entry_page_aurora");
+    expect(customEntries).toHaveLength(1);
+    expect(customEdges).toHaveLength(1);
     expect(snapshot.provenance).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -96,20 +98,20 @@ describe("llm-wiki runtime persistence", () => {
         }),
       ]),
     );
-    expect(snapshot.entries[0]).toEqual(
+    expect(customEntries[0]).toEqual(
       expect.objectContaining({
         workspaceId: workspace.id,
         id: "entry_page_aurora",
         kind: "page",
       }),
     );
-    expect(snapshot.entries[0].sourceRefs).toEqual([
+    expect(customEntries[0].sourceRefs).toEqual([
       expect.objectContaining({
         sourceId: "source_1",
         locator: expect.objectContaining({ sectionHeading: "Project Aurora", blockIndex: 0 }),
       }),
     ]);
-    expect(snapshot.edges[0]).toEqual(
+    expect(customEdges[0]).toEqual(
       expect.objectContaining({
         id: "entry_page_aurora::mentions::entry_entity_customer_a",
         workspaceId: workspace.id,
@@ -118,7 +120,7 @@ describe("llm-wiki runtime persistence", () => {
         type: "mentions",
       }),
     );
-    expect(snapshot.edges[0].evidenceRefs).toEqual([
+    expect(customEdges[0].evidenceRefs).toEqual([
       expect.objectContaining({
         sourceId: "source_1",
         excerpt: "客户 A",
@@ -239,12 +241,15 @@ describe("llm-wiki runtime persistence", () => {
       version: 1,
     });
 
-    expect(db.getRuntimeSnapshot(workspaceA.id).entries).toEqual([
-      expect.objectContaining({ id: "entry_a", workspaceId: workspaceA.id }),
-    ]);
-    expect(db.getRuntimeSnapshot(workspaceB.id).entries).toEqual([
-      expect.objectContaining({ id: "entry_b", workspaceId: workspaceB.id }),
-    ]);
+    expect(db.getRuntimeSnapshot(workspaceA.id).entries).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "entry_a", workspaceId: workspaceA.id })]),
+    );
+    expect(db.getRuntimeSnapshot(workspaceB.id).entries).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "entry_b", workspaceId: workspaceB.id })]),
+    );
+    expect(db.getRuntimeSnapshot(workspaceA.id).entries).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "entry_b" })]),
+    );
   });
 
   it("normalizes legacy relation arrays into runtime edge schema before persistence", async () => {

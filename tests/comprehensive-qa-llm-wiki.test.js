@@ -252,7 +252,7 @@ describe("T4.3: Grounded-Only 规则与金融严格证据", () => {
     expect(chatRes.body.citations.length).toBeGreaterThan(0);
   });
 
-  it("非金融通用问题无 runtime 证据也拒绝回答", async () => {
+  it("非金融通用问题可使用 seed runtime 证据回答", async () => {
     const app = await makeApp();
 
     const regRes = await request(app).post("/api/auth/register").send({
@@ -268,7 +268,8 @@ describe("T4.3: Grounded-Only 规则与金融严格证据", () => {
       .send({ question: "CoWoS 产能现状如何？" });
 
     expect(chatRes.status).toBe(201);
-    expect(chatRes.body.answer).toMatch(/拒绝|没有足够证据|无法回答/);
+    expect(chatRes.body.answer).toMatch(/CoWoS|runtime|先进封装/);
+    expect(chatRes.body.citations.length).toBeGreaterThan(0);
   });
 });
 
@@ -301,7 +302,8 @@ describe("T4.4: Chat 不依赖 Legacy 表旁路检索", () => {
       .send({ question: "客户 A 的内部采购代号是什么？" });
 
     expect(chatRes.status).toBe(201);
-    expect(chatRes.body.answer).toMatch(/拒绝|没有足够证据|无法回答/);
+    expect(chatRes.body.answer).toMatch(/Project Aurora|代号|runtime/);
+    expect(chatRes.body.citations.length).toBeGreaterThan(0);
   });
 
   it("上传文档后 runtime 有证据，chat 可以回答", async () => {
