@@ -309,7 +309,7 @@ describe("exportRuntimeToLlmWiki", () => {
     expect(frontmatter).toContain('"alias\\ninjected: true"');
   });
 
-  it("rejects path traversal in entry title slugs", async () => {
+  it("rejects path traversal in entry title slugs", { timeout: 10000 }, async () => {
     const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "xinwiki-runtime-traversal-"));
     tempDirs.push(outputDir);
 

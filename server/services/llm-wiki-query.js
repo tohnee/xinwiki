@@ -115,11 +115,15 @@ function dedupeEvidence(records) {
   return result;
 }
 
-function mapRuntimeEntry(entry, query) {
+function mapRuntimeEntry(entry, query, ontologyWeights) {
   const baseScore = scoreSearchText(collectEntryText(entry), query);
   if (baseScore <= 0) {
     return null;
   }
+
+  // 专家权重加权：expertWeight 作为排序因子，权重越高排名越靠前
+  const expertWeight = (ontologyWeights && ontologyWeights.get(entry.title)) || 0;
+  const expertBonus = expertWeight > 0 ? expertWeight * 0.3 : 0;
 
   return {
     id: entry.id,
@@ -128,7 +132,7 @@ function mapRuntimeEntry(entry, query) {
     summary: entry.summary,
     excerpt: buildExcerpt(collectEntryText(entry), query),
     // Prefer page-level evidence so query/chat ground on the canonical page entry.
-    score: baseScore + (entry.kind === "page" ? 2 : 0),
+    score: baseScore + (entry.kind === "page" ? 2 : 0) + expertBonus,
     status: entry.status,
     sourceRefs: entry.sourceRefs || [],
   };
@@ -158,7 +162,7 @@ function mapRuntimeRelation(edge, entryMap, query) {
   };
 }
 
-export function queryRuntimeSnapshot({ snapshot = {}, query }) {
+export function queryRuntimeSnapshot({ snapshot = {}, query, ontologyWeights }) {
   const normalizedQuery = String(query || "").trim();
   if (!normalizedQuery) {
     return {
@@ -174,7 +178,7 @@ export function queryRuntimeSnapshot({ snapshot = {}, query }) {
   const activeEntries = (snapshot.entries || []).filter((entry) => entry.status !== "superseded");
   const entryMap = new Map(activeEntries.map((entry) => [entry.id, entry]));
   const entries = activeEntries
-    .map((entry) => mapRuntimeEntry(entry, normalizedQuery))
+    .map((entry) => mapRuntimeEntry(entry, normalizedQuery, ontologyWeights))
     .filter(Boolean)
     .sort((left, right) => right.score - left.score)
     .slice(0, 5);

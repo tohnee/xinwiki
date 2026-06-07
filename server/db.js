@@ -714,6 +714,10 @@ function buildApi(db) {
 
   return {
     db,
+    transaction(fn) {
+      const tx = db.transaction(fn);
+      return tx();
+    },
     createUser({ email, passwordHash, displayName }) {
       const createdAt = nowIso();
       const user = {
@@ -798,6 +802,23 @@ function buildApi(db) {
         updatedAt: createdAt,
       });
       return wikiPage;
+    },
+    getOntologyWeights(workspaceId) {
+      const rows = jsonRows(statements.listOntologyNodes.all(workspaceId));
+      const weights = new Map();
+      for (const node of rows) {
+        const payload = typeof node === "object" ? (node.payload_json ? JSON.parse(node.payload_json || "{}") : node) : {};
+        const entityName = payload.id || payload.title || "";
+        const weight = Number(payload.expertWeight) || 0;
+        // P7: 跳过 stale/superseded 节点
+        if (payload.status === "stale" || payload.status === "superseded") {
+          continue;
+        }
+        if (entityName && weight > 0) {
+          weights.set(entityName, weight);
+        }
+      }
+      return weights;
     },
     saveOntologyNode(workspaceId, node) {
       const createdAt = nowIso();

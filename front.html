@@ -151,6 +151,7 @@ button{cursor:pointer;border:none;background:none}
 .file-card,.wiki-item,.entity-card{cursor:pointer}
 .file-card:hover,.wiki-item:hover,.entity-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm);border-color:var(--line2)}
 .file-card.active,.wiki-item.active,.entity-card.active{border-color:var(--indigo);background:var(--indigo-soft)}
+.entity-card.stale{opacity:.55;filter:grayscale(.3)}
 .file-top{display:flex;align-items:center;gap:11px}
 .file-icon{
   width:36px;height:36px;border-radius:11px;background:linear-gradient(150deg,var(--indigo-soft),var(--violet-soft));
@@ -1019,11 +1020,11 @@ function renderLeft(){
           </div>
         </div>
         ${ontoNodes.map(n=>`
-          <div class="entity-card ${activeNode===n.id?'active':''}" data-node-left="${esc(n.id)}">
+          <div class="entity-card ${activeNode===n.id?'active':''}${n.status==='stale'||n.status==='superseded'?' stale':''}" data-node-left="${esc(n.id)}">
             <div class="file-top">
-              <div class="file-icon" style="background:${n.color}1c;color:${n.color}">${icons.onto}</div>
+              <div class="file-icon" style="background:${(n.status==='stale'||n.status==='superseded')?'#5a5a6e1c':n.color+'1c'};color:${(n.status==='stale'||n.status==='superseded')?'#5a5a6e':n.color}">${icons.onto}</div>
               <div>
-                <div class="file-name">${esc(n.id)}</div>
+                <div class="file-name">${esc(n.id)}${(n.status==='stale'||n.status==='superseded')?' <span style="font-size:10px;color:var(--muted)">已废弃</span>':''}</div>
                 <div class="file-meta">
                   <span class="mini">${esc(n.type)}</span>
                   <span class="mini">expert ${n.expertWeight||1}/5</span>
@@ -1578,15 +1579,18 @@ function renderOntology(){
 
         ${ontoNodes.map(n=>{
           const ac=n.id===activeNode;
+          const stale=n.status==='stale'||n.status==='superseded';
           const w=n.expertWeight||1;
           const r=25+w*4;
+          const nodeColor=stale?'#5a5a6e':n.color;
+          const nodeOpacity=stale?.06:(ac?.23:.10);
           return `
             <g data-node="${esc(n.id)}" style="cursor:pointer">
-              <circle cx="${n.x}" cy="${n.y}" r="${ac?r+26:r+18}" fill="${n.color}" opacity="${ac?.23:.10}" filter="url(#glow)"></circle>
-              <circle cx="${n.x}" cy="${n.y}" r="${ac?r+5:r}" fill="#11152a" stroke="${n.color}" stroke-width="${ac?3:1.7}" filter="url(#glow)"></circle>
-              ${w>=4?`<circle cx="${n.x+r*.65}" cy="${n.y-r*.65}" r="8" fill="#f59e0b"></circle>`:''}
-              <text class="node-label" x="${n.x}" y="${n.y-3}" text-anchor="middle">${esc(n.id.length>8?n.id.slice(0,8):n.id)}</text>
-              <text class="node-type" x="${n.x}" y="${n.y+13}" text-anchor="middle">${esc(n.type)} · E${w}</text>
+              <circle cx="${n.x}" cy="${n.y}" r="${ac?r+26:r+18}" fill="${nodeColor}" opacity="${nodeOpacity}" filter="url(#glow)"></circle>
+              <circle cx="${n.x}" cy="${n.y}" r="${ac?r+5:r}" fill="#11152a" stroke="${nodeColor}" stroke-width="${ac?3:1.7}" stroke-dasharray="${stale?'6,4':''}" filter="url(#glow)"></circle>
+              ${w>=4 && !stale?`<circle cx="${n.x+r*.65}" cy="${n.y-r*.65}" r="8" fill="#f59e0b"></circle>`:''}
+              <text class="node-label" x="${n.x}" y="${stale?n.y-10:n.y-3}" text-anchor="middle" opacity="${stale?.5:1}">${esc(n.id.length>8?n.id.slice(0,8):n.id)}</text>
+              <text class="node-type" x="${n.x}" y="${n.y+13}" text-anchor="middle" opacity="${stale?.5:1}">${esc(n.type)} · E${w}${stale?' · 已废弃':''}</text>
             </g>
           `;
         }).join('')}
@@ -1603,10 +1607,11 @@ function renderOntology(){
       </div>
 
       <div class="onto-detail">
-        <h3>${esc(active.id)}</h3>
+        <h3>${esc(active.id)}${(active.status==='stale'||active.status==='superseded')?' <span class="tag orange" style="font-size:11px">已废弃 v${active.version||1}</span>':''}</h3>
         <p>对象类型：${esc(active.type)}</p>
         <p>专家重要性：${active.expertWeight||1}/5 · ${weightLabel(active.expertWeight||1)}</p>
         <p>专家理由：${esc(active.expertNote||'暂无专家经验')}</p>
+        ${(active.status==='stale'||active.status==='superseded')?`<p style="color:var(--muted);font-size:12px">⚠️ ${esc(active.staleReason||'该实体已被更新版本取代。')}</p>`:''}
         <div class="tag-row">
           <button class="btn secondary sm" onclick="openWikiFromNode('${esc(active.wiki)}')">打开 Wiki</button>
           <button class="btn secondary sm" onclick="quickSetExpert('${esc(active.id)}',5)">设为最高</button>

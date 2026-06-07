@@ -306,10 +306,11 @@ const FINANCE_INTENT_KEYWORDS = [
   "市盈率",
 ];
 
-function groundedAnswer({ runtimeSnapshot, question }) {
+function groundedAnswer({ runtimeSnapshot, question, ontologyWeights }) {
   const runtimeQuery = queryRuntimeSnapshot({
     snapshot: runtimeSnapshot,
     query: question,
+    ontologyWeights,
   });
   const runtimeGrounded = buildGroundedAnswerFromQuery(runtimeQuery, question);
   if (runtimeGrounded.canAnswer) {
@@ -486,6 +487,37 @@ export async function createApp(options = {}) {
     for (const marker of compilation.supersededMarkers) {
       db.addRuntimeSupersededMarker(workspaceId, marker);
     }
+
+    // P3: Reparse 后增量同步 Ontology 清理
+    // 将 superseded 的 entity entries 对应的 ontology node 标记为 stale
+    const supersededEntries = compilation.upsertedEntries.filter((e) => e.status === "superseded");
+    if (supersededEntries.length > 0) {
+      const bootstrap = db.getBootstrap(workspaceId);
+      const upsertedTitles = new Set(
+        compilation.upsertedEntries.filter((e) => e.status !== "superseded").map((e) => e.title),
+      );
+      for (const entry of supersededEntries) {
+        // 如果新编译中有同名 entity，恢复为 active
+        if (upsertedTitles.has(entry.title)) {
+          continue;
+        }
+        // 查找匹配的 ontology node 并标记为 stale
+        const matchingNode = bootstrap.ontologyNodes.find(
+          (n) => n.id === entry.title || n.id === entry.title.slice(0, 10),
+        );
+        if (matchingNode) {
+          const updatedNode = {
+            ...matchingNode,
+            status: "stale",
+            version: (matchingNode.version || 0) + 1,
+            staleReason: `Runtime entry ${entry.id} 已被 supersede。`,
+            updatedAt: new Date().toISOString(),
+          };
+          db.saveOntologyNode(workspaceId, updatedNode);
+        }
+      }
+    }
+
     for (const logEvent of compilation.logEvents) {
       db.addRuntimeLog(workspaceId, logEvent);
     }
@@ -496,29 +528,43 @@ export async function createApp(options = {}) {
   }
 
   function saveWikiArtifacts(workspaceId, source) {
-    source.wikiBuilt = true;
-    db.updateSource(workspaceId, source);
-    saveCompiledRuntimeArtifacts(workspaceId, source);
+    return db.transaction(() => {
+      source.wikiBuilt = true;
+      db.updateSource(workspaceId, source);
+      const compilation = saveCompiledRuntimeArtifacts(workspaceId, source);
 
-    const wikiPage = buildWikiFromSource(source);
-    db.saveWikiPage(workspaceId, wikiPage);
+      const wikiPage = buildWikiFromSource(source);
+      // P5: 链接 Wiki page → Runtime page entry
+      const pageEntry = compilation.upsertedEntries.find((e) => e.kind === "page" && e.status !== "superseded");
+      if (pageEntry) {
+        wikiPage.runtimeEntryId = pageEntry.id;
+      }
+      db.saveWikiPage(workspaceId, wikiPage);
 
-    const bootstrap = db.getBootstrap(workspaceId);
-    const nodeExists = bootstrap.ontologyNodes.some((node) => node.id === wikiPage.title);
-    if (!nodeExists) {
-      db.saveOntologyNode(workspaceId, {
-        id: wikiPage.title,
-        type: wikiPage.type,
-        x: 160 + Math.round(Math.random() * 500),
-        y: 160 + Math.round(Math.random() * 320),
-        color: "#5b6ef5",
-        wiki: wikiPage.id,
-        expertWeight: 2,
-        expertNote: "由上传文档自动生成的本体节点。",
-      });
-    }
+      const bootstrap = db.getBootstrap(workspaceId);
+      const nodeExists = bootstrap.ontologyNodes.some((node) => node.id === wikiPage.title);
+      if (!nodeExists) {
+        // P5: 找到对应的 Runtime entity entry 并链接
+        const entityEntry = compilation.upsertedEntries.find(
+          (e) => e.kind === "entity" && e.title === wikiPage.title && e.status !== "superseded",
+        );
+        db.saveOntologyNode(workspaceId, {
+          id: wikiPage.title,
+          type: wikiPage.type,
+          x: 160 + Math.round(Math.random() * 500),
+          y: 160 + Math.round(Math.random() * 320),
+          color: "#5b6ef5",
+          wiki: wikiPage.id,
+          runtimeEntryId: entityEntry ? entityEntry.id : undefined,
+          expertWeight: 2,
+          expertNote: "由上传文档自动生成的本体节点。",
+          status: "active",
+          version: 1,
+        });
+      }
 
-    return wikiPage;
+      return wikiPage;
+    });
   }
 
   async function requireAuth(req, res, next) {
@@ -813,7 +859,8 @@ export async function createApp(options = {}) {
   });
 
   app.post("/api/wiki/:wikiId/promote", requireAuth, (req, res) => {
-    const bootstrap = db.getBootstrap(req.auth.workspace.id);
+    const workspaceId = req.auth.workspace.id;
+    const bootstrap = db.getBootstrap(workspaceId);
     const wikiPage = bootstrap.wikiPages.find((page) => page.id === req.params.wikiId);
     if (!wikiPage) {
       res.status(404).json({ error: "Wiki page not found." });
@@ -833,10 +880,36 @@ export async function createApp(options = {}) {
       y: 160 + Math.round(Math.random() * 360),
       color: "#5b6ef5",
       wiki: wikiPage.id,
+      runtimeEntryId: entityId,
       expertWeight: 2,
       expertNote: "由 Wiki 页面提升为本体对象，等待专家确认。",
+      status: "active",
+      version: 1,
     };
-    db.saveOntologyNode(req.auth.workspace.id, node);
+    db.saveOntologyNode(workspaceId, node);
+
+    // P2: Promote 同步创建 Runtime entity entry（如果不存在）
+    const entityId = `entry_entity_${wikiPage.title.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "_").replace(/^_|_$/g, "")}`;
+    const runtimeSnapshot = db.getRuntimeSnapshot(workspaceId);
+    const existingEntity = runtimeSnapshot.entries.find((e) => e.id === entityId);
+    if (!existingEntity) {
+      const promoteEntry = {
+        id: entityId,
+        kind: "entity",
+        title: wikiPage.title,
+        summary: wikiPage.abstract || `由 Wiki 页面「${wikiPage.title}」promote 生成的本体实体。`,
+        bodyMarkdown: wikiPage.abstract || `# ${wikiPage.title}\n\n由 Wiki 页面「${wikiPage.title}」promote 生成。`,
+        aliases: [],
+        tags: ["promoted", "wiki"],
+        status: "active",
+        compiledFrom: [],
+        sourceRefs: [],
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      db.saveRuntimeEntry(workspaceId, promoteEntry);
+    }
+
     res.status(201).json({ node, existed: false });
   });
 
@@ -939,7 +1012,8 @@ export async function createApp(options = {}) {
     const question = parsed.data.question;
     db.addMessage(thread.id, "user", question);
     const runtimeSnapshot = db.queryRuntimeSnapshot(req.auth.workspace.id, question);
-    const grounded = groundedAnswer({ runtimeSnapshot, question });
+    const ontologyWeights = db.getOntologyWeights(req.auth.workspace.id);
+    const grounded = groundedAnswer({ runtimeSnapshot, question, ontologyWeights });
 
     let result;
     if (!grounded.canAnswer) {
@@ -1004,7 +1078,8 @@ export async function createApp(options = {}) {
     const question = parsed.data.question;
     db.addMessage(thread.id, "user", question);
     const runtimeSnapshot = db.queryRuntimeSnapshot(req.auth.workspace.id, question);
-    const grounded = groundedAnswer({ runtimeSnapshot, question });
+    const ontologyWeights = db.getOntologyWeights(req.auth.workspace.id);
+    const grounded = groundedAnswer({ runtimeSnapshot, question, ontologyWeights });
 
     // 设置 SSE 响应头
     res.writeHead(200, {
@@ -1197,19 +1272,84 @@ export async function createApp(options = {}) {
 
   app.post("/api/llm-wiki/export", requireAuth, async (req, res, next) => {
     try {
-      const runtime = db.getRuntimeSnapshot(req.auth.workspace.id);
-      const outputDir = path.join(llmWikiDir, req.auth.workspace.id);
-      const tmpDir = path.join(llmWikiDir, `${req.auth.workspace.id}.tmp.${Date.now()}`);
+      const workspaceId = req.auth.workspace.id;
+      const runtime = db.getRuntimeSnapshot(workspaceId);
+      const bootstrap = db.getBootstrap(workspaceId);
+
+      // P4: 将 Wiki Pages 和 Ontology 数据合并到 Runtime 导出中
+      // 找出在 Wiki/Ontology 中存在但 Runtime 中缺失的条目
+      const runtimeTitles = new Set((runtime.entries || []).map((e) => e.title));
+      const wikiEntries = (bootstrap.wikiPages || [])
+        .filter((wp) => !runtimeTitles.has(wp.title))
+        .map((wp) => ({
+          id: `entry_wiki_legacy_${wp.id}`,
+          kind: "page",
+          title: wp.title,
+          summary: wp.abstract || `Wiki 页面：${wp.title}`,
+          bodyMarkdown: wp.sections
+            ? wp.sections.map(([h, t]) => `## ${h}\n\n${t}`).join("\n\n")
+            : `# ${wp.title}\n\n${wp.abstract || ""}`,
+          aliases: [],
+          tags: ["wiki-legacy"],
+          status: "active",
+          sourceRefs: [],
+          compiledFrom: [],
+          version: 1,
+          updatedAt: wp.updatedAt || new Date().toISOString(),
+        }));
+
+      const ontologyNodesForExport = (bootstrap.ontologyNodes || [])
+        .filter((n) => !runtimeTitles.has(n.id))
+        .map((n) => ({
+          id: `entry_onto_legacy_${n.id}`,
+          kind: "entity",
+          title: n.id,
+          summary: n.expertNote || `本体节点「${n.id}」`,
+          bodyMarkdown: `# ${n.id}\n\n${n.expertNote || ""}\n\n专家权重：${n.expertWeight || 0}`,
+          aliases: [],
+          tags: ["ontology-legacy", ...(n.status === "stale" ? ["stale"] : [])],
+          status: n.status || "active",
+          sourceRefs: [],
+          compiledFrom: [],
+          version: 1,
+          updatedAt: n.updatedAt || new Date().toISOString(),
+        }));
+
+      // 合并 Ontology edges（不重复 Runtime 已有的边）
+      const runtimeEdgeKeys = new Set(
+        (runtime.edges || []).map((e) => `${e.fromEntryId}::${e.type}::${e.toEntryId}`),
+      );
+      const ontologyEdges = (bootstrap.ontologyEdges || [])
+        .filter((edge) => {
+          const key = `${edge.fromName}::${edge.type}::${edge.toName}`;
+          return !runtimeEdgeKeys.has(key);
+        })
+        .map((edge) => ({
+          fromEntryId: edge.fromName,
+          toEntryId: edge.toName,
+          type: edge.type || "related_to",
+          evidenceRefs: [],
+          confidence: edge.expertWeight ? Math.min(edge.expertWeight / 5, 1) : 0.5,
+        }));
+
+      const augmentedRuntime = {
+        ...runtime,
+        entries: [...(runtime.entries || []), ...wikiEntries, ...ontologyNodesForExport],
+        edges: [...(runtime.edges || []), ...ontologyEdges],
+      };
+
+      const outputDir = path.join(llmWikiDir, workspaceId);
+      const tmpDir = path.join(llmWikiDir, `${workspaceId}.tmp.${Date.now()}`);
 
       let result;
       try {
         result = await exportRuntimeToLlmWiki({
           outputDir: tmpDir,
           workspace: {
-            id: req.auth.workspace.id,
+            id: workspaceId,
             name: req.auth.workspace.name,
           },
-          runtime,
+          runtime: augmentedRuntime,
         });
 
         // 原子替换
@@ -1222,7 +1362,7 @@ export async function createApp(options = {}) {
 
       res.status(201).json({
         pageCount: result.pageCount,
-        workspaceId: req.auth.workspace.id,
+        workspaceId,
         nodeCount: result.nodeCount,
         edgeCount: result.edgeCount,
       });
