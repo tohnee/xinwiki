@@ -246,6 +246,30 @@ export async function createDatabase({ dataDir }) {
       FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
     );
 
+    CREATE TABLE IF NOT EXISTS llm_wiki_runtime_source_refs (
+      workspace_id TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (workspace_id, source_id, owner_type, owner_id),
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS llm_wiki_runtime_search USING fts5(
+      workspace_id UNINDEXED,
+      entry_id UNINDEXED,
+      kind,
+      title,
+      summary,
+      body_markdown,
+      aliases,
+      tags,
+      source_text,
+      status UNINDEXED,
+      tokenize = 'unicode61'
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sources_workspace ON sources(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_wiki_pages_workspace ON wiki_pages(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_ontology_nodes_workspace ON ontology_nodes(workspace_id);
@@ -255,6 +279,7 @@ export async function createDatabase({ dataDir }) {
     CREATE INDEX IF NOT EXISTS idx_memories_workspace ON memories(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_chat_threads_workspace ON chat_threads(workspace_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_workspace ON jobs(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_runtime_source_refs_workspace_source ON llm_wiki_runtime_source_refs(workspace_id, source_id);
   `);
 
   return buildApi(db);
@@ -367,6 +392,51 @@ function buildApi(db) {
     listRuntimeEntries: db.prepare(`
       SELECT * FROM llm_wiki_runtime_entries WHERE workspace_id = ? ORDER BY id ASC
     `),
+    listRuntimeEntriesBySource: db.prepare(`
+      SELECT DISTINCT e.*
+      FROM llm_wiki_runtime_entries e
+      JOIN llm_wiki_runtime_source_refs r
+        ON r.workspace_id = e.workspace_id
+       AND r.owner_type = 'entry'
+       AND r.owner_id = e.id
+      WHERE e.workspace_id = ? AND r.source_id = ?
+      ORDER BY e.id ASC
+    `),
+    deleteRuntimeEntrySearch: db.prepare(`
+      DELETE FROM llm_wiki_runtime_search WHERE workspace_id = ? AND entry_id = ?
+    `),
+    insertRuntimeEntrySearch: db.prepare(`
+      INSERT INTO llm_wiki_runtime_search
+      (workspace_id, entry_id, kind, title, summary, body_markdown, aliases, tags, source_text, status)
+      VALUES (@workspaceId, @entryId, @kind, @title, @summary, @bodyMarkdown, @aliases, @tags, @sourceText, @status)
+    `),
+    searchRuntimeEntriesFts: db.prepare(`
+      SELECT entry_id, bm25(llm_wiki_runtime_search) AS rank
+      FROM llm_wiki_runtime_search
+      WHERE llm_wiki_runtime_search MATCH @matchQuery
+        AND workspace_id = @workspaceId
+        AND status != 'superseded'
+      ORDER BY rank ASC
+      LIMIT @limit
+    `),
+    searchRuntimeEntriesLike: db.prepare(`
+      SELECT entry_id, 0 AS rank
+      FROM llm_wiki_runtime_search
+      WHERE workspace_id = @workspaceId
+        AND status != 'superseded'
+        AND (
+          lower(title) LIKE @likeQuery
+          OR lower(summary) LIKE @likeQuery
+          OR lower(body_markdown) LIKE @likeQuery
+          OR lower(aliases) LIKE @likeQuery
+          OR lower(tags) LIKE @likeQuery
+          OR lower(source_text) LIKE @likeQuery
+        )
+      LIMIT @limit
+    `),
+    getRuntimeEntry: db.prepare(`
+      SELECT * FROM llm_wiki_runtime_entries WHERE workspace_id = ? AND id = ?
+    `),
     upsertRuntimeEdge: db.prepare(`
       INSERT INTO llm_wiki_runtime_edges (workspace_id, id, payload_json, created_at, updated_at)
       VALUES (@workspaceId, @id, @payloadJson, @createdAt, @updatedAt)
@@ -377,12 +447,36 @@ function buildApi(db) {
     listRuntimeEdges: db.prepare(`
       SELECT * FROM llm_wiki_runtime_edges WHERE workspace_id = ? ORDER BY id ASC
     `),
+    listRuntimeEdgesBySource: db.prepare(`
+      SELECT DISTINCT e.*
+      FROM llm_wiki_runtime_edges e
+      JOIN llm_wiki_runtime_source_refs r
+        ON r.workspace_id = e.workspace_id
+       AND r.owner_type = 'edge'
+       AND r.owner_id = e.id
+      WHERE e.workspace_id = ? AND r.source_id = ?
+      ORDER BY e.id ASC
+    `),
+    listRuntimeEdgesForEntry: db.prepare(`
+      SELECT * FROM llm_wiki_runtime_edges
+      WHERE workspace_id = ? AND (json_extract(payload_json, '$.fromEntryId') = ? OR json_extract(payload_json, '$.toEntryId') = ?)
+      ORDER BY id ASC
+    `),
     deleteRuntimeEdge: db.prepare(`
       DELETE FROM llm_wiki_runtime_edges WHERE workspace_id = ? AND id = ?
     `),
     deleteRuntimeProvenanceByOwner: db.prepare(`
       DELETE FROM llm_wiki_runtime_provenance
       WHERE workspace_id = ? AND owner_type = ? AND owner_id = ?
+    `),
+    deleteRuntimeSourceRefsByOwner: db.prepare(`
+      DELETE FROM llm_wiki_runtime_source_refs
+      WHERE workspace_id = ? AND owner_type = ? AND owner_id = ?
+    `),
+    insertRuntimeSourceRef: db.prepare(`
+      INSERT OR IGNORE INTO llm_wiki_runtime_source_refs
+      (workspace_id, source_id, owner_type, owner_id, created_at)
+      VALUES (@workspaceId, @sourceId, @ownerType, @ownerId, @createdAt)
     `),
     insertRuntimeProvenance: db.prepare(`
       INSERT INTO llm_wiki_runtime_provenance
@@ -393,6 +487,21 @@ function buildApi(db) {
       SELECT * FROM llm_wiki_runtime_provenance
       WHERE workspace_id = ?
       ORDER BY owner_type ASC, owner_id ASC, id ASC
+    `),
+    listRuntimeProvenanceByOwner: db.prepare(`
+      SELECT * FROM llm_wiki_runtime_provenance
+      WHERE workspace_id = ? AND owner_type = ? AND owner_id = ?
+      ORDER BY id ASC
+    `),
+    listRuntimeProvenanceBySource: db.prepare(`
+      SELECT DISTINCT p.*
+      FROM llm_wiki_runtime_provenance p
+      JOIN llm_wiki_runtime_source_refs r
+        ON r.workspace_id = p.workspace_id
+       AND r.owner_type = p.owner_type
+       AND r.owner_id = p.owner_id
+      WHERE p.workspace_id = ? AND r.source_id = ?
+      ORDER BY p.owner_type ASC, p.owner_id ASC, p.id ASC
     `),
     insertRuntimeLog: db.prepare(`
       INSERT INTO llm_wiki_runtime_logs (workspace_id, id, payload_json, created_at, updated_at)
@@ -465,6 +574,58 @@ function buildApi(db) {
     }
   }
 
+  function replaceRuntimeSourceRefs(workspaceId, ownerType, ownerId, records) {
+    const createdAt = nowIso();
+    const sourceIds = new Set(records.map((record) => record?.sourceId).filter(Boolean));
+    statements.deleteRuntimeSourceRefsByOwner.run(workspaceId, ownerType, ownerId);
+    for (const sourceId of sourceIds) {
+      statements.insertRuntimeSourceRef.run({
+        workspaceId,
+        sourceId,
+        ownerType,
+        ownerId,
+        createdAt,
+      });
+    }
+  }
+
+  function indexRuntimeEntry(workspaceId, entry) {
+    statements.deleteRuntimeEntrySearch.run(workspaceId, entry.id);
+    statements.insertRuntimeEntrySearch.run({
+      workspaceId,
+      entryId: entry.id,
+      kind: entry.kind,
+      title: entry.title,
+      summary: entry.summary,
+      bodyMarkdown: entry.bodyMarkdown,
+      aliases: (entry.aliases || []).join(" "),
+      tags: (entry.tags || []).join(" "),
+      sourceText: (entry.sourceRefs || [])
+        .flatMap((ref) => [ref.sourceId, ref.excerpt, ref.locator?.sectionHeading])
+        .filter(Boolean)
+        .join(" "),
+      status: entry.status,
+    });
+  }
+
+  function ftsTerms(query) {
+    return String(query || "")
+      .toLowerCase()
+      .replace(/["'`^~*()+\-[\]{}:]/g, " ")
+      .split(/[\s，。！？?!；;、/]+/u)
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 2)
+      .slice(0, 8);
+  }
+
+  function ftsMatchQuery(query) {
+    const terms = ftsTerms(query);
+    if (!terms.length) {
+      return "";
+    }
+    return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
+  }
+
   function seedWorkspace(workspaceId) {
     const createdAt = nowIso();
 
@@ -519,10 +680,14 @@ function buildApi(db) {
     }
 
     for (const record of DEMO_WORKSPACE.qaRecords) {
-      statements.insertQaRecord.run({
+      const payload = {
         id: record.id || createId("qa"),
+        ...record,
+      };
+      statements.insertQaRecord.run({
+        id: entityRowId(workspaceId, payload.id),
         workspaceId,
-        payloadJson: JSON.stringify(record),
+        payloadJson: JSON.stringify(payload),
         createdAt,
         updatedAt: createdAt,
       });
@@ -708,7 +873,7 @@ function buildApi(db) {
         ...record,
       };
       statements.insertQaRecord.run({
-        id: enriched.id,
+        id: entityRowId(workspaceId, enriched.id),
         workspaceId,
         payloadJson: JSON.stringify(enriched),
         createdAt,
@@ -834,6 +999,8 @@ function buildApi(db) {
           updatedAt: createdAt,
         });
         replaceRuntimeProvenance(workspaceId, "entry", storedEntry.id, provenance);
+        replaceRuntimeSourceRefs(workspaceId, "entry", storedEntry.id, provenance);
+        indexRuntimeEntry(workspaceId, normalized);
       });
       transaction();
       return normalized;
@@ -852,6 +1019,7 @@ function buildApi(db) {
           updatedAt: createdAt,
         });
         replaceRuntimeProvenance(workspaceId, "edge", storedEdge.id, provenance);
+        replaceRuntimeSourceRefs(workspaceId, "edge", storedEdge.id, provenance);
       });
       transaction();
       return normalized;
@@ -860,6 +1028,7 @@ function buildApi(db) {
       const transaction = db.transaction(() => {
         statements.deleteRuntimeEdge.run(workspaceId, edgeId);
         statements.deleteRuntimeProvenanceByOwner.run(workspaceId, "edge", edgeId);
+        statements.deleteRuntimeSourceRefsByOwner.run(workspaceId, "edge", edgeId);
       });
       transaction();
     },
@@ -937,6 +1106,64 @@ function buildApi(db) {
         updatedAt: createdAt,
       });
       return normalized;
+    },
+    getRuntimeSourceSnapshot(workspaceId, sourceId) {
+      return createRuntimeSnapshot({
+        entries: jsonRows(statements.listRuntimeEntriesBySource.all(workspaceId, sourceId)),
+        edges: jsonRows(statements.listRuntimeEdgesBySource.all(workspaceId, sourceId)),
+        provenance: jsonRows(statements.listRuntimeProvenanceBySource.all(workspaceId, sourceId)),
+        logs: [],
+        lintIssues: [],
+        indexViews: [],
+        stalenessMarkers: [],
+        supersededMarkers: [],
+      });
+    },
+    queryRuntimeSnapshot(workspaceId, query, { limit = 5 } = {}) {
+      const matchQuery = ftsMatchQuery(query);
+      const likeQuery = `%${String(query || "").toLowerCase().replace(/[%_]/g, " ")}%`;
+      let rows = [];
+      if (matchQuery) {
+        rows = statements.searchRuntimeEntriesFts.all({ workspaceId, matchQuery, limit: Math.max(limit * 4, 20) });
+      }
+      if (!rows.length) {
+        rows = statements.searchRuntimeEntriesLike.all({ workspaceId, likeQuery, limit: Math.max(limit * 4, 20) });
+      }
+
+      const entryIds = [...new Set(rows.map((row) => row.entry_id))].slice(0, Math.max(limit * 4, 20));
+      const entries = entryIds
+        .map((entryId) => statements.getRuntimeEntry.get(workspaceId, entryId))
+        .filter(Boolean);
+      const edgeRows = [];
+      const seenEdgeIds = new Set();
+      for (const entryId of entryIds) {
+        for (const edgeRow of statements.listRuntimeEdgesForEntry.all(workspaceId, entryId, entryId)) {
+          if (seenEdgeIds.has(edgeRow.id)) {
+            continue;
+          }
+          seenEdgeIds.add(edgeRow.id);
+          edgeRows.push(edgeRow);
+        }
+      }
+
+      const provenanceRows = [];
+      for (const entryRow of entries) {
+        provenanceRows.push(...statements.listRuntimeProvenanceByOwner.all(workspaceId, "entry", entryRow.id));
+      }
+      for (const edgeRow of edgeRows) {
+        provenanceRows.push(...statements.listRuntimeProvenanceByOwner.all(workspaceId, "edge", edgeRow.id));
+      }
+
+      return createRuntimeSnapshot({
+        entries: jsonRows(entries),
+        edges: jsonRows(edgeRows),
+        provenance: jsonRows(provenanceRows),
+        logs: [],
+        lintIssues: [],
+        indexViews: [],
+        stalenessMarkers: [],
+        supersededMarkers: [],
+      });
     },
     getRuntimeSnapshot(workspaceId) {
       return createRuntimeSnapshot({

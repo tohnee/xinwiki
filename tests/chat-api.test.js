@@ -494,3 +494,87 @@ describe("chat stream", () => {
     expect(messagesResponse.body.messages[1].content).toMatch(/拒绝|没有足够证据|无法回答/);
   });
 });
+
+describe("Dify conversation isolation", () => {
+  it("stores and reuses one Dify conversation id per authenticated user's workspace", async () => {
+    process.env.DIFY_API_BASE_URL = "https://dify-isolation.example.test/v1";
+    process.env.DIFY_API_KEY = "test-isolation-key";
+
+    const fetchMock = vi.fn(async (_url, options) => {
+      const body = JSON.parse(options.body);
+      const suffix = /Owner Evidence|owner isolated/i.test(body.inputs.grounding_context) ? "owner" : "other";
+      return new Response(
+        JSON.stringify({
+          answer: `Dify answer for ${suffix}`,
+          conversation_id: body.conversation_id || `conv_${suffix}`,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    globalThis.fetch = fetchMock;
+
+    const app = await makeApp();
+    const uploadDir = await fs.mkdtemp(path.join(os.tmpdir(), "xinwiki-dify-isolation-"));
+    tempDirs.push(uploadDir);
+
+    const ownerRegister = await request(app).post("/api/auth/register").send({
+      email: "owner-dify@example.com",
+      password: "Passw0rd!",
+      displayName: "owner dify",
+    });
+    const ownerCookie = ownerRegister.headers["set-cookie"];
+
+    const otherRegister = await request(app).post("/api/auth/register").send({
+      email: "other-dify@example.com",
+      password: "Passw0rd!",
+      displayName: "other dify",
+    });
+    const otherCookie = otherRegister.headers["set-cookie"];
+
+    const ownerDoc = path.join(uploadDir, "owner-evidence.md");
+    const otherDoc = path.join(uploadDir, "other-evidence.md");
+    await fs.writeFile(ownerDoc, "# Owner Evidence\n\nowner isolated runtime evidence.", "utf8");
+    await fs.writeFile(otherDoc, "# Other Evidence\n\nother isolated runtime evidence.", "utf8");
+
+    await request(app)
+      .post("/api/sources/upload-and-build")
+      .set("Cookie", ownerCookie)
+      .attach("files", ownerDoc)
+      .expect(201);
+    await request(app)
+      .post("/api/sources/upload-and-build")
+      .set("Cookie", otherCookie)
+      .attach("files", otherDoc)
+      .expect(201);
+
+    await request(app)
+      .post("/api/chat/message")
+      .set("Cookie", ownerCookie)
+      .send({ question: "owner isolated runtime evidence" })
+      .expect(201);
+    await request(app)
+      .post("/api/chat/message")
+      .set("Cookie", otherCookie)
+      .send({ question: "other isolated runtime evidence" })
+      .expect(201);
+    await request(app)
+      .post("/api/chat/message")
+      .set("Cookie", ownerCookie)
+      .send({ question: "owner isolated runtime evidence" })
+      .expect(201);
+
+    const bodies = fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body));
+    expect(bodies).toHaveLength(3);
+    expect(bodies[0].conversation_id).toBeUndefined();
+    expect(bodies[1].conversation_id).toBeUndefined();
+    expect(bodies[2].conversation_id).toBe("conv_owner");
+    expect(bodies[0].user).not.toBe(bodies[1].user);
+    expect(bodies[0].inputs.grounding_context).toMatch(/Owner Evidence|owner isolated/i);
+    expect(bodies[1].inputs.grounding_context).toMatch(/Other Evidence|other isolated/i);
+
+    const ownerThread = await request(app).get("/api/chat/thread").set("Cookie", ownerCookie);
+    const otherThread = await request(app).get("/api/chat/thread").set("Cookie", otherCookie);
+    expect(ownerThread.body.thread.conversationId).toBe("conv_owner");
+    expect(otherThread.body.thread.conversationId).toBe("conv_other");
+  });
+});

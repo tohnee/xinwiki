@@ -331,10 +331,16 @@ function groundedAnswer({ runtimeSnapshot, question }) {
   };
 }
 
+function threadDifyConversationId(thread) {
+  return thread?.dify_conversation_id ?? thread?.difyConversationId ?? thread?.conversationId ?? null;
+}
+
 async function askDify({ config, userId, question, thread, grounded }) {
   if (!config.apiBaseUrl || !config.apiKey) {
     return null;
   }
+
+  const conversationId = threadDifyConversationId(thread);
 
   const timeout = parseInt(process.env.DIFY_TIMEOUT_MS || "30000", 10);
   const controller = new AbortController();
@@ -354,7 +360,7 @@ async function askDify({ config, userId, question, thread, grounded }) {
         },
         query: question,
         response_mode: "blocking",
-        conversation_id: thread.dify_conversation_id || undefined,
+        conversation_id: conversationId || undefined,
         user: userId,
       }),
       signal: controller.signal,
@@ -369,7 +375,7 @@ async function askDify({ config, userId, question, thread, grounded }) {
     return {
       answer: data.answer || "Dify 没有返回文本。",
       citations: grounded.citations,
-      conversationId: data.conversation_id || thread.dify_conversation_id || null,
+      conversationId: data.conversation_id || conversationId || null,
     };
   } finally {
     clearTimeout(timer);
@@ -463,7 +469,7 @@ export async function createApp(options = {}) {
     const compilation = compileDocumentIntoRuntime({
       workspaceId,
       parseResult: source.parseResult,
-      existingRuntimeSnapshot: db.getRuntimeSnapshot(workspaceId),
+      existingRuntimeSnapshot: db.getRuntimeSourceSnapshot(workspaceId, source.id),
     });
     for (const entry of compilation.upsertedEntries) {
       db.saveRuntimeEntry(workspaceId, entry);
@@ -932,7 +938,7 @@ export async function createApp(options = {}) {
     const thread = db.getOrCreateThread(req.auth.workspace.id);
     const question = parsed.data.question;
     db.addMessage(thread.id, "user", question);
-    const runtimeSnapshot = db.getRuntimeSnapshot(req.auth.workspace.id);
+    const runtimeSnapshot = db.queryRuntimeSnapshot(req.auth.workspace.id, question);
     const grounded = groundedAnswer({ runtimeSnapshot, question });
 
     let result;
@@ -940,7 +946,7 @@ export async function createApp(options = {}) {
       result = {
         answer: grounded.answer,
         citations: grounded.citations,
-        conversationId: thread.dify_conversation_id,
+        conversationId: threadDifyConversationId(thread),
       };
     } else {
       try {
@@ -958,7 +964,7 @@ export async function createApp(options = {}) {
         result = {
           answer: `${grounded.answer}\n\n注：Dify 调用失败，已返回本地 grounded 答案。错误：${error.message}`,
           citations: grounded.citations,
-          conversationId: thread.dify_conversation_id,
+          conversationId: threadDifyConversationId(thread),
         };
       }
 
@@ -966,12 +972,12 @@ export async function createApp(options = {}) {
         result = {
           answer: grounded.answer,
           citations: grounded.citations,
-          conversationId: thread.dify_conversation_id,
+          conversationId: threadDifyConversationId(thread),
         };
       }
     }
 
-    if (result.conversationId && result.conversationId !== thread.dify_conversation_id) {
+    if (result.conversationId && result.conversationId !== threadDifyConversationId(thread)) {
       db.updateThread(req.auth.workspace.id, {
         ...thread,
         difyConversationId: result.conversationId,
@@ -997,7 +1003,7 @@ export async function createApp(options = {}) {
     const thread = db.getOrCreateThread(req.auth.workspace.id);
     const question = parsed.data.question;
     db.addMessage(thread.id, "user", question);
-    const runtimeSnapshot = db.getRuntimeSnapshot(req.auth.workspace.id);
+    const runtimeSnapshot = db.queryRuntimeSnapshot(req.auth.workspace.id, question);
     const grounded = groundedAnswer({ runtimeSnapshot, question });
 
     // 设置 SSE 响应头
@@ -1051,7 +1057,7 @@ export async function createApp(options = {}) {
               },
               query: question,
               response_mode: "streaming",
-              conversation_id: thread.dify_conversation_id || undefined,
+              conversation_id: threadDifyConversationId(thread) || undefined,
               user: req.auth.user.id,
             }),
             signal: streamController.signal,
@@ -1074,7 +1080,7 @@ export async function createApp(options = {}) {
       const reader = difyResponse.body.getReader();
       const decoder = new TextDecoder();
       let fullAnswer = "";
-      let conversationId = thread.dify_conversation_id;
+      let conversationId = threadDifyConversationId(thread);
       let buffer = "";
 
       try {
@@ -1114,7 +1120,7 @@ export async function createApp(options = {}) {
 
       // 持久化完整回答
       db.addMessage(thread.id, "assistant", fullAnswer || grounded.answer, grounded.citations);
-      if (conversationId && conversationId !== thread.dify_conversation_id) {
+      if (conversationId && conversationId !== threadDifyConversationId(thread)) {
         db.updateThread(req.auth.workspace.id, {
           ...thread,
           difyConversationId: conversationId,
@@ -1232,7 +1238,7 @@ export async function createApp(options = {}) {
       return;
     }
 
-    const runtimeSnapshot = db.getRuntimeSnapshot(req.auth.workspace.id);
+    const runtimeSnapshot = db.queryRuntimeSnapshot(req.auth.workspace.id, query);
     res.json(queryRuntimeSnapshot({
       snapshot: runtimeSnapshot,
       query,
