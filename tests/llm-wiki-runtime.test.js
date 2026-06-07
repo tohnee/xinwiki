@@ -419,3 +419,116 @@ describe("llm-wiki runtime persistence", () => {
     ).toThrow(/foreign key|constraint/i);
   });
 });
+
+describe("llm-wiki runtime incremental and indexed query", () => {
+  function runtimeEntry({ id, title, sourceId, bodyMarkdown = "# Runtime Entry", status = "active" }) {
+    return {
+      id,
+      kind: "page",
+      title,
+      summary: `${title} summary`,
+      bodyMarkdown,
+      aliases: [],
+      tags: ["scale-test"],
+      status,
+      sourceRefs: [
+        {
+          sourceId,
+          sourceType: "upload",
+          locator: { sectionHeading: title, blockIndex: 0 },
+          excerpt: bodyMarkdown,
+          confidence: 0.8,
+        },
+      ],
+      compiledFrom: [sourceId],
+      updatedAt: "2026-06-05T00:00:00.000Z",
+      version: 1,
+    };
+  }
+
+  it("narrows incremental compile snapshots to the changed source instead of loading the whole runtime", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xinwiki-runtime-incremental-"));
+    tempDirs.push(dir);
+    const db = await createDatabase({ dataDir: dir });
+    const { workspace } = db.createUser({
+      email: "runtime-incremental@example.com",
+      passwordHash: "hash",
+      displayName: "Runtime Incremental",
+    });
+
+    db.saveRuntimeEntry(workspace.id, runtimeEntry({
+      id: "entry_source_a",
+      title: "Source A Only",
+      sourceId: "source_a",
+      bodyMarkdown: "# Source A\n\nOnly source A should be returned.",
+    }));
+    db.saveRuntimeEntry(workspace.id, runtimeEntry({
+      id: "entry_source_b",
+      title: "Source B Only",
+      sourceId: "source_b",
+      bodyMarkdown: "# Source B\n\nOnly source B should stay outside the source A incremental snapshot.",
+    }));
+    db.saveRuntimeEdge(workspace.id, {
+      fromEntryId: "entry_source_a",
+      toEntryId: "entry_entity_a",
+      type: "mentions",
+      evidenceRefs: [{ sourceId: "source_a", sourceType: "upload", excerpt: "entity A" }],
+      confidence: 0.7,
+    });
+
+    const sourceSnapshot = db.getRuntimeSourceSnapshot(workspace.id, "source_a");
+    expect(sourceSnapshot.entries).toEqual([
+      expect.objectContaining({ id: "entry_source_a", compiledFrom: ["source_a"] }),
+    ]);
+    expect(sourceSnapshot.edges).toEqual([
+      expect.objectContaining({ fromEntryId: "entry_source_a", type: "mentions" }),
+    ]);
+    expect(sourceSnapshot.provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceId: "source_a", ownerId: "entry_source_a" }),
+      ]),
+    );
+    expect(sourceSnapshot.entries).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "entry_source_b" })]),
+    );
+  });
+
+  it("uses the runtime search index to retrieve a needle from a large workspace without scanning the full snapshot", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "xinwiki-runtime-search-"));
+    tempDirs.push(dir);
+    const db = await createDatabase({ dataDir: dir });
+    const { workspace } = db.createUser({
+      email: "runtime-search@example.com",
+      passwordHash: "hash",
+      displayName: "Runtime Search",
+    });
+
+    const bulkInsert = db.db.transaction(() => {
+      for (let i = 0; i < 10000; i += 1) {
+        db.saveRuntimeEntry(workspace.id, runtimeEntry({
+          id: `entry_bulk_${i}`,
+          title: `Bulk Runtime Page ${i}`,
+          sourceId: `bulk_source_${i}`,
+          bodyMarkdown: `# Bulk Runtime Page ${i}\n\nGeneric runtime content ${i}.`,
+        }));
+      }
+      db.saveRuntimeEntry(workspace.id, runtimeEntry({
+        id: "entry_unique_needle",
+        title: "Quantum Needle Capacity",
+        sourceId: "needle_source",
+        bodyMarkdown: "# Quantum Needle Capacity\n\nUniqueNeedleAlpha capacity evidence for indexed retrieval.",
+      }));
+    });
+    bulkInsert();
+
+    const startedAt = performance.now();
+    const indexedSnapshot = db.queryRuntimeSnapshot(workspace.id, "UniqueNeedleAlpha", { limit: 5 });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(indexedSnapshot.entries).toEqual([
+      expect.objectContaining({ id: "entry_unique_needle", title: "Quantum Needle Capacity" }),
+    ]);
+    expect(indexedSnapshot.entries.length).toBeLessThanOrEqual(5);
+    expect(elapsedMs).toBeLessThan(750);
+  }, 60000);
+});
