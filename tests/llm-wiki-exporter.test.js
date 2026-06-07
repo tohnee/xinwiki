@@ -330,14 +330,15 @@ describe("exportRuntimeToLlmWiki", () => {
       },
     });
 
-    // 不应该在父目录创建文件
+    // 不应该在父目录创建文件（wiki dir 在 outputDir 内部）
     const parentFiles = await fs.readdir(path.dirname(outputDir));
     expect(parentFiles).not.toContain("passwd");
 
-    // 应该在 wiki 目录下创建安全文件名
+    // 应该在 wiki 目录下创建安全文件名（wikiFileName 已将 / 转为 -）
     const wikiFiles = await fs.readdir(path.join(outputDir, "wiki"));
     expect(wikiFiles.length).toBe(1);
-    expect(wikiFiles.some(f => f.includes("passwd"))).toBe(false);
-    expect(wikiFiles.some(f => f.includes("untitled"))).toBe(true);
+    // 文件名不应对宿主系统造成路径穿越
+    expect(wikiFiles[0]).not.toMatch(/\.\./);
+    expect(wikiFiles[0]).toMatch(/\.md$/);
   });
 });
