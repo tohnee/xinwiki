@@ -424,13 +424,14 @@ describe("T2.3: 跨用户完整数据隐私隔离矩阵", () => {
       .send({ question: "B Dify content" });
 
     const calls = fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body));
+    const latestCalls = calls.slice(-2);
 
     // 验证两个用户的 Dify user ID 不同
-    expect(calls[0].user).not.toBe(calls[1].user);
+    expect(latestCalls[0].user).not.toBe(latestCalls[1].user);
 
     // 验证 grounding_context 不同
-    expect(calls[0].inputs.grounding_context).toMatch(/A Dify/i);
-    expect(calls[1].inputs.grounding_context).toMatch(/B Dify/i);
+    expect(latestCalls[0].inputs.grounding_context).toMatch(/A Dify/i);
+    expect(latestCalls[1].inputs.grounding_context).toMatch(/B Dify/i);
 
     // 验证 conversation_id 各自独立
     const threadA = await request(app)

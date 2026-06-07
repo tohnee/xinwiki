@@ -4,6 +4,16 @@ import Database from "better-sqlite3";
 
 import { DEMO_WORKSPACE } from "./data/demo-workspace.js";
 import {
+  expertRuntimeEntry,
+  manualEntityEntry,
+  memoryRuntimeEntry,
+  normalizeLegacyOntologyEdge,
+  ontologyNodeRuntimeEntry,
+  qaRuntimeEntry,
+  runtimeEdgeFromNames,
+  wikiPageRuntimeEntry,
+} from "./services/canonical-runtime-sync.js";
+import {
   buildEdgeProvenanceRecords,
   buildEntryProvenanceRecords,
   createRuntimeSnapshot,
@@ -609,13 +619,24 @@ function buildApi(db) {
   }
 
   function ftsTerms(query) {
-    return String(query || "")
+    const terms = [];
+    for (const rawTerm of String(query || "")
       .toLowerCase()
       .replace(/["'`^~*()+\-[\]{}:]/g, " ")
-      .split(/[\s，。！？?!；;、/]+/u)
-      .map((term) => term.trim())
-      .filter((term) => term.length >= 2)
-      .slice(0, 8);
+      .split(/[\s，。！？?!；;、/]+/u)) {
+      const term = rawTerm.trim();
+      if (term.length >= 2) {
+        terms.push(term);
+      }
+      if (/[\u4e00-\u9fff]/u.test(term)) {
+        for (let size = 2; size <= 4; size++) {
+          for (let index = 0; index <= term.length - size; index++) {
+            terms.push(term.slice(index, index + size));
+          }
+        }
+      }
+    }
+    return [...new Set(terms)].slice(0, 12);
   }
 
   function ftsMatchQuery(query) {
@@ -624,6 +645,41 @@ function buildApi(db) {
       return "";
     }
     return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
+  }
+
+  function persistRuntimeEntry(workspaceId, entry) {
+    const normalized = normalizeRuntimeEntry(workspaceId, entry);
+    const provenance = buildEntryProvenanceRecords(workspaceId, normalized);
+    const storedEntry = stripEntryInlineProvenance(normalized);
+    const createdAt = nowIso();
+    statements.upsertRuntimeEntry.run({
+      workspaceId,
+      id: storedEntry.id,
+      payloadJson: JSON.stringify(storedEntry),
+      createdAt,
+      updatedAt: createdAt,
+    });
+    replaceRuntimeProvenance(workspaceId, "entry", storedEntry.id, provenance);
+    replaceRuntimeSourceRefs(workspaceId, "entry", storedEntry.id, provenance);
+    indexRuntimeEntry(workspaceId, normalized);
+    return normalized;
+  }
+
+  function persistRuntimeEdge(workspaceId, edge) {
+    const normalized = normalizeRuntimeEdge(workspaceId, edge);
+    const provenance = buildEdgeProvenanceRecords(workspaceId, normalized);
+    const storedEdge = stripEdgeInlineProvenance(normalized);
+    const createdAt = nowIso();
+    statements.upsertRuntimeEdge.run({
+      workspaceId,
+      id: storedEdge.id,
+      payloadJson: JSON.stringify(storedEdge),
+      createdAt,
+      updatedAt: createdAt,
+    });
+    replaceRuntimeProvenance(workspaceId, "edge", storedEdge.id, provenance);
+    replaceRuntimeSourceRefs(workspaceId, "edge", storedEdge.id, provenance);
+    return normalized;
   }
 
   function seedWorkspace(workspaceId) {
@@ -694,13 +750,60 @@ function buildApi(db) {
     }
 
     for (const memory of DEMO_WORKSPACE.memories) {
+      const payload = {
+        id: memory.id || createId("memory"),
+        createdAt,
+        ...memory,
+      };
       statements.insertMemory.run({
-        id: createId("memory"),
+        id: payload.id,
         workspaceId,
-        payloadJson: JSON.stringify(memory),
+        payloadJson: JSON.stringify(payload),
         createdAt,
         updatedAt: createdAt,
       });
+    }
+
+    for (const wikiPage of DEMO_WORKSPACE.wikiPages) {
+      persistRuntimeEntry(workspaceId, wikiPageRuntimeEntry({ workspaceId, wikiPage, updatedAt: createdAt }));
+    }
+    for (const node of DEMO_WORKSPACE.ontologyNodes) {
+      persistRuntimeEntry(workspaceId, ontologyNodeRuntimeEntry({ workspaceId, node, updatedAt: createdAt }));
+    }
+    for (const relation of DEMO_WORKSPACE.ontologyEdges) {
+      const normalized = normalizeLegacyOntologyEdge(relation);
+      if (!normalized?.fromTitle || !normalized?.toTitle) {
+        continue;
+      }
+      persistRuntimeEntry(workspaceId, manualEntityEntry({
+        workspaceId,
+        title: normalized.fromTitle,
+        type: "ontology",
+        updatedAt: createdAt,
+      }));
+      persistRuntimeEntry(workspaceId, manualEntityEntry({
+        workspaceId,
+        title: normalized.toTitle,
+        type: "ontology",
+        updatedAt: createdAt,
+      }));
+      persistRuntimeEdge(workspaceId, runtimeEdgeFromNames({
+        ...normalized,
+        sourceId: `legacy_relation_${normalized.fromTitle}_${normalized.type}_${normalized.toTitle}`,
+        confidence: 0.75,
+      }));
+    }
+    for (const injection of DEMO_WORKSPACE.expertInjections) {
+      const payload = { id: injection.id || createId("expert"), createdAt, ...injection };
+      persistRuntimeEntry(workspaceId, expertRuntimeEntry({ workspaceId, injection: payload, updatedAt: createdAt }));
+    }
+    for (const record of DEMO_WORKSPACE.qaRecords) {
+      const payload = { id: record.id || createId("qa"), createdAt, ...record };
+      persistRuntimeEntry(workspaceId, qaRuntimeEntry({ workspaceId, record: payload, updatedAt: createdAt }));
+    }
+    for (const memory of DEMO_WORKSPACE.memories) {
+      const payload = { id: memory.id || createId("memory"), createdAt, ...memory };
+      persistRuntimeEntry(workspaceId, memoryRuntimeEntry({ workspaceId, memory: payload, updatedAt: createdAt }));
     }
 
     statements.upsertFocusConfig.run({
@@ -877,14 +980,19 @@ function buildApi(db) {
     },
     addExpertInjection(workspaceId, injection) {
       const createdAt = nowIso();
+      const enriched = {
+        id: injection.id || createId("expert"),
+        createdAt,
+        ...injection,
+      };
       statements.insertExpertInjection.run({
-        id: createId("expert"),
+        id: enriched.id,
         workspaceId,
-        payloadJson: JSON.stringify(injection),
+        payloadJson: JSON.stringify(enriched),
         createdAt,
         updatedAt: createdAt,
       });
-      return injection;
+      return enriched;
     },
     addQaRecord(workspaceId, record) {
       const createdAt = nowIso();
@@ -1007,43 +1115,12 @@ function buildApi(db) {
       return focuses;
     },
     saveRuntimeEntry(workspaceId, entry) {
-      const normalized = normalizeRuntimeEntry(workspaceId, entry);
-      const provenance = buildEntryProvenanceRecords(workspaceId, normalized);
-      const storedEntry = stripEntryInlineProvenance(normalized);
-      const createdAt = nowIso();
-      const transaction = db.transaction(() => {
-        statements.upsertRuntimeEntry.run({
-          workspaceId,
-          id: storedEntry.id,
-          payloadJson: JSON.stringify(storedEntry),
-          createdAt,
-          updatedAt: createdAt,
-        });
-        replaceRuntimeProvenance(workspaceId, "entry", storedEntry.id, provenance);
-        replaceRuntimeSourceRefs(workspaceId, "entry", storedEntry.id, provenance);
-        indexRuntimeEntry(workspaceId, normalized);
-      });
-      transaction();
-      return normalized;
+      const transaction = db.transaction(() => persistRuntimeEntry(workspaceId, entry));
+      return transaction();
     },
     saveRuntimeEdge(workspaceId, edge) {
-      const normalized = normalizeRuntimeEdge(workspaceId, edge);
-      const provenance = buildEdgeProvenanceRecords(workspaceId, normalized);
-      const storedEdge = stripEdgeInlineProvenance(normalized);
-      const createdAt = nowIso();
-      const transaction = db.transaction(() => {
-        statements.upsertRuntimeEdge.run({
-          workspaceId,
-          id: storedEdge.id,
-          payloadJson: JSON.stringify(storedEdge),
-          createdAt,
-          updatedAt: createdAt,
-        });
-        replaceRuntimeProvenance(workspaceId, "edge", storedEdge.id, provenance);
-        replaceRuntimeSourceRefs(workspaceId, "edge", storedEdge.id, provenance);
-      });
-      transaction();
-      return normalized;
+      const transaction = db.transaction(() => persistRuntimeEdge(workspaceId, edge));
+      return transaction();
     },
     deleteRuntimeEdge(workspaceId, edgeId) {
       const transaction = db.transaction(() => {
