@@ -12,12 +12,20 @@ import multer from "multer";
 import { z } from "zod";
 
 import { createDatabase } from "./db.js";
-import { compileDocumentIntoRuntime } from "./services/llm-wiki-compiler.js";
+import {
+  expertRuntimeEntry,
+  manualEntityEntry,
+  memoryRuntimeEntry,
+  normalizeLegacyOntologyEdge,
+  qaRuntimeEntry,
+  runtimeEdgeFromNames,
+} from "./services/canonical-runtime-sync.js";
+import { createLlmWikiBuildService } from "./services/llm-wiki-build-service.js";
 import { buildGroundedAnswerFromQuery, queryRuntimeSnapshot } from "./services/llm-wiki-query.js";
 import { createDefaultParserAdapter } from "./services/parser-adapter.js";
-import { exportReportAsDocx, exportReportAsPdf } from "./services/report-exporter.js";
-import { exportRuntimeToLlmWiki, exportWorkspaceToLlmWiki } from "./services/llm-wiki-exporter.js";
-import { buildReportPackage } from "./services/report-generator.js";
+import { createReportService } from "./services/report-service.js";
+import { exportRuntimeToLlmWiki } from "./services/llm-wiki-exporter.js";
+import { createSourceParsingService } from "./services/source-parsing-service.js";
 import { ensureDir, nowIso, uploadFileName } from "./utils.js";
 
 dotenv.config();
@@ -74,6 +82,7 @@ const reportExportSchema = z.object({
 });
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOAD_FILES = Number(process.env.MAX_UPLOAD_FILES || 10);
 const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".md",
   ".markdown",
@@ -104,86 +113,17 @@ function clearAuthCookie(res) {
   res.clearCookie("xinwiki_token");
 }
 
-function isSectionTuple(value) {
-  return Array.isArray(value)
-    && value.length >= 2
-    && typeof value[0] === "string"
-    && typeof value[1] === "string";
-}
-
-function assertValidParseResult(parseResult) {
-  if (!parseResult || typeof parseResult !== "object") {
-    throw new Error("Invalid parser adapter output: parse result must be an object.");
-  }
-
-  if (!parseResult.document || typeof parseResult.document !== "object") {
-    throw new Error("Invalid parser adapter output: missing document metadata.");
-  }
-
-  if (!String(parseResult.document.sourceId || "").trim()) {
-    throw new Error("Invalid parser adapter output: document.sourceId is required.");
-  }
-
-  if (!parseResult.content || typeof parseResult.content !== "object") {
-    throw new Error("Invalid parser adapter output: missing content payload.");
-  }
-
-  if (typeof parseResult.content.markdown !== "string") {
-    throw new Error("Invalid parser adapter output: content.markdown must be a string.");
-  }
-
-  if (!Array.isArray(parseResult.content.sections)) {
-    throw new Error("Invalid parser adapter output: content.sections must be an array.");
-  }
-
-  if (!parseResult.content.sections.every(isSectionTuple)) {
-    throw new Error("Invalid parser adapter output: content.sections entries must be [heading, text] tuples.");
-  }
-}
-
 async function summarizeUpload(file, overrides = {}) {
-  const parseResult = await overrides.parserAdapter.parse({
-    sourceId: overrides.id || createId("source"),
+  if (!overrides.sourceParsingService) {
+    throw new Error("Source parsing service is required.");
+  }
+  return overrides.sourceParsingService.summarizeUpload({
     file,
+    overrides,
+    parserId: overrides.parserId,
   });
-  assertValidParseResult(parseResult);
-  const markdown = parseResult.content?.markdown || "";
-  const sections = Array.isArray(parseResult.content?.sections) ? parseResult.content.sections : [];
-  const abstract = sections.find(([, content]) => String(content || "").trim())?.[1]
-    || parseResult.content?.plainText
-    || "已完成基础文本解析，等待进一步构建 Wiki 页面。";
-  const facts = String(markdown || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => /^[-*]\s+/.test(line))
-    .map((line) => line.replace(/^[-*]\s+/, "").trim())
-    .filter(Boolean)
-    .slice(0, 6);
-  return {
-    id: parseResult.document.sourceId,
-    name: overrides.name || file.originalname,
-    title: overrides.title || `上传文档 · ${file.originalname}`,
-    source: overrides.source || "用户上传",
-    date: overrides.date || new Date().toLocaleDateString("zh-CN"),
-    type: overrides.type || "上传文档",
-    mimeType: parseResult.document?.mimeType || file.mimetype || "application/octet-stream",
-    size: overrides.size || `${Math.max(1, Math.round(file.size / 1024))} KB`,
-    parsed: true,
-    wikiBuilt: overrides.wikiBuilt ?? false,
-    progress: 100,
-    abstract,
-    facts,
-    sections,
-    markdown,
-    parserMeta: {
-      mode: parseResult.quality?.mode || "text",
-      parserName: parseResult.document?.parserName,
-      parserVersion: parseResult.document?.parserVersion,
-    },
-    storagePath: overrides.storagePath || file.path,
-    parseResult,
-  };
 }
+
 
 function buildWikiFromSource(source) {
   const summary = source.abstract || `这是由 ${source.name} 自动构建的 Workspace Wiki 页面。`;
@@ -312,13 +252,30 @@ function groundedAnswer({ runtimeSnapshot, question, ontologyWeights }) {
     query: question,
     ontologyWeights,
   });
+  const lowered = question.toLowerCase();
+  const requiresStrictEvidence = FINANCE_INTENT_KEYWORDS.some((keyword) => lowered.includes(keyword));
+  if (requiresStrictEvidence) {
+    const hasIntentEvidence = (runtimeQuery.entries || []).some((entry) => {
+      const text = [entry.title, entry.summary, entry.excerpt, ...(entry.sourceRefs || []).map((ref) => ref.excerpt)]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return FINANCE_INTENT_KEYWORDS.some((keyword) => text.includes(keyword));
+    });
+    if (!hasIntentEvidence) {
+      return {
+        canAnswer: false,
+        answer: "当前没有足够的 runtime 证据来回答这个问题。按照 grounded-only 规则，我会拒绝回答；该问题属于金融预测/指标类，请先提供明确的 runtime 文档证据。",
+        citations: [],
+        context: "",
+      };
+    }
+  }
+
   const runtimeGrounded = buildGroundedAnswerFromQuery(runtimeQuery, question);
   if (runtimeGrounded.canAnswer) {
     return runtimeGrounded;
   }
-
-  const lowered = question.toLowerCase();
-  const requiresStrictEvidence = FINANCE_INTENT_KEYWORDS.some((keyword) => lowered.includes(keyword));
 
   return {
     canAnswer: false,
@@ -411,7 +368,45 @@ export async function createApp(options = {}) {
 
   const db = await createDatabase({ dataDir });
 
+  const sourceParsingService = options.sourceParsingService || createSourceParsingService({
+    adapters: {
+      "local-basic": parserAdapter,
+      [parserAdapter.name || "default"]: parserAdapter,
+    },
+    defaultAdapterId: parserAdapter.name || "local-basic",
+    createSourceId: () => createId("source"),
+  });
+  const llmWikiBuildService = options.llmWikiBuildService || createLlmWikiBuildService({
+    db,
+    onSupersededEntry: ({ workspaceId, entry, compilation }) => {
+      const bootstrap = db.getBootstrap(workspaceId);
+      const upsertedTitles = new Set(
+        (compilation.upsertedEntries || [])
+          .filter((item) => item.status !== "superseded")
+          .map((item) => item.title),
+      );
+      if (upsertedTitles.has(entry.title)) {
+        return;
+      }
+      const matchingNode = bootstrap.ontologyNodes.find(
+        (node) => node.id === entry.title || node.id === entry.title.slice(0, 10),
+      );
+      if (matchingNode) {
+        db.saveOntologyNode(workspaceId, {
+          ...matchingNode,
+          status: "stale",
+          version: (matchingNode.version || 0) + 1,
+          staleReason: `Runtime entry ${entry.id} 已被 supersede。`,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    },
+  });
+  const reportService = options.reportService || createReportService();
+
   const app = express();
+  app.locals.db = db;
+  app.locals.services = { sourceParsingService, llmWikiBuildService, reportService };
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser());
 
@@ -431,6 +426,7 @@ export async function createApp(options = {}) {
     }),
     limits: {
       fileSize: MAX_UPLOAD_BYTES,
+      files: MAX_UPLOAD_FILES,
     },
     fileFilter(_req, file, cb) {
       const extension = path.extname(file.originalname || "").toLowerCase();
@@ -463,69 +459,9 @@ export async function createApp(options = {}) {
   }
 
   function saveCompiledRuntimeArtifacts(workspaceId, source) {
-    if (!source?.parseResult) {
-      throw new Error("Source parse result is unavailable; please reparse the source before building wiki.");
-    }
-
-    const compilation = compileDocumentIntoRuntime({
-      workspaceId,
-      parseResult: source.parseResult,
-      existingRuntimeSnapshot: db.getRuntimeSourceSnapshot(workspaceId, source.id),
-    });
-    for (const entry of compilation.upsertedEntries) {
-      db.saveRuntimeEntry(workspaceId, entry);
-    }
-    for (const edge of compilation.upsertedEdges) {
-      db.saveRuntimeEdge(workspaceId, edge);
-    }
-    for (const edge of compilation.removedEdges) {
-      db.deleteRuntimeEdge(workspaceId, edge.id || `${edge.fromEntryId}::${edge.type}::${edge.toEntryId}`);
-    }
-    for (const marker of compilation.staleMarkers) {
-      db.addRuntimeStalenessMarker(workspaceId, marker);
-    }
-    for (const marker of compilation.supersededMarkers) {
-      db.addRuntimeSupersededMarker(workspaceId, marker);
-    }
-
-    // P3: Reparse 后增量同步 Ontology 清理
-    // 将 superseded 的 entity entries 对应的 ontology node 标记为 stale
-    const supersededEntries = compilation.upsertedEntries.filter((e) => e.status === "superseded");
-    if (supersededEntries.length > 0) {
-      const bootstrap = db.getBootstrap(workspaceId);
-      const upsertedTitles = new Set(
-        compilation.upsertedEntries.filter((e) => e.status !== "superseded").map((e) => e.title),
-      );
-      for (const entry of supersededEntries) {
-        // 如果新编译中有同名 entity，恢复为 active
-        if (upsertedTitles.has(entry.title)) {
-          continue;
-        }
-        // 查找匹配的 ontology node 并标记为 stale
-        const matchingNode = bootstrap.ontologyNodes.find(
-          (n) => n.id === entry.title || n.id === entry.title.slice(0, 10),
-        );
-        if (matchingNode) {
-          const updatedNode = {
-            ...matchingNode,
-            status: "stale",
-            version: (matchingNode.version || 0) + 1,
-            staleReason: `Runtime entry ${entry.id} 已被 supersede。`,
-            updatedAt: new Date().toISOString(),
-          };
-          db.saveOntologyNode(workspaceId, updatedNode);
-        }
-      }
-    }
-
-    for (const logEvent of compilation.logEvents) {
-      db.addRuntimeLog(workspaceId, logEvent);
-    }
-    for (const lintHint of compilation.lintHints) {
-      db.addRuntimeLintIssue(workspaceId, lintHint);
-    }
-    return compilation;
+    return llmWikiBuildService.compileAndPersistSource({ workspaceId, source });
   }
+
 
   function saveWikiArtifacts(workspaceId, source) {
     return db.transaction(() => {
@@ -565,6 +501,42 @@ export async function createApp(options = {}) {
 
       return wikiPage;
     });
+  }
+
+  function saveHumanRuntimeEntry(workspaceId, entry) {
+    const saved = db.saveRuntimeEntry(workspaceId, entry);
+    db.addRuntimeLog(workspaceId, {
+      kind: "human-sync",
+      sourceId: entry.compiledFrom?.[0] || null,
+      detail: `Synced ${entry.kind} runtime entry: ${entry.title}`,
+    });
+    return saved;
+  }
+
+  function ensureManualEntityRuntimeEntry(workspaceId, title, updatedAt = new Date().toISOString()) {
+    return db.saveRuntimeEntry(workspaceId, manualEntityEntry({
+      workspaceId,
+      title,
+      type: "ontology",
+      updatedAt,
+    }));
+  }
+
+  function syncLegacyRelationToRuntime(workspaceId, relation, { sourceId, confidence = 0.75 } = {}) {
+    const normalized = normalizeLegacyOntologyEdge(relation);
+    if (!normalized?.fromTitle || !normalized?.toTitle || !normalized?.type) {
+      return null;
+    }
+    const updatedAt = new Date().toISOString();
+    ensureManualEntityRuntimeEntry(workspaceId, normalized.fromTitle, updatedAt);
+    ensureManualEntityRuntimeEntry(workspaceId, normalized.toTitle, updatedAt);
+    const edge = runtimeEdgeFromNames({
+      ...normalized,
+      sourceId: sourceId || `manual_relation_${normalized.fromTitle}_${normalized.type}_${normalized.toTitle}`,
+      excerpt: `${normalized.fromTitle} -${normalized.type}-> ${normalized.toTitle}`,
+      confidence,
+    });
+    return db.saveRuntimeEdge(workspaceId, edge);
   }
 
   async function requireAuth(req, res, next) {
@@ -613,6 +585,45 @@ export async function createApp(options = {}) {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, time: nowIso() });
+  });
+
+  app.get("/api/service-capabilities", (_req, res) => {
+    res.json({
+      sourceParser: {
+        ...sourceParsingService.capabilities,
+        adapters: sourceParsingService.listAdapters(),
+        mcpTools: sourceParsingService.getMcpToolDefinitions(),
+      },
+      llmWikiBuilder: {
+        ...llmWikiBuildService.capabilities,
+        compilers: llmWikiBuildService.listCompilers(),
+        mcpTools: llmWikiBuildService.getMcpToolDefinitions(),
+      },
+      reportService: {
+        ...reportService.capabilities,
+        generators: reportService.listGenerators(),
+        exporters: reportService.listExporters(),
+        mcpTools: reportService.getMcpToolDefinitions(),
+      },
+    });
+  });
+
+  app.get("/api/openapi.json", (_req, res) => {
+    res.json({
+      openapi: "3.1.0",
+      info: { title: "XinWiki API", version: "1.0.0" },
+      paths: {
+        "/api/auth/register": { post: { summary: "Register a user and workspace" } },
+        "/api/auth/login": { post: { summary: "Login and set session cookie" } },
+        "/api/bootstrap": { get: { summary: "Load workspace state" } },
+        "/api/service-capabilities": { get: { summary: "List MCP-ready service capabilities and tool contracts" } },
+        "/api/sources/upload-and-build": { post: { summary: "Upload sources and compile runtime wiki" } },
+        "/api/chat/message/stream": { post: { summary: "Stream grounded runtime chat answers" } },
+        "/api/reports/export": { post: { summary: "Export grounded report artifacts" } },
+        "/api/llm-wiki/export": { post: { summary: "Project canonical runtime to llm-wiki files" } },
+        "/api/llm-wiki/query": { get: { summary: "Query canonical runtime" } },
+      },
+    });
   });
 
   app.post("/api/auth/register", async (req, res) => {
@@ -737,13 +748,13 @@ export async function createApp(options = {}) {
     });
   });
 
-  app.post("/api/sources/upload", requireAuth, uploader.array("files"), async (req, res, next) => {
+  app.post("/api/sources/upload", requireAuth, uploader.array("files", MAX_UPLOAD_FILES), async (req, res, next) => {
     try {
       const files = Array.isArray(req.files) ? req.files : [];
       const created = [];
 
       for (const file of files) {
-        const source = await summarizeUpload(file, { parserAdapter });
+        const source = await summarizeUpload(file, { sourceParsingService });
         created.push(db.createSource(req.auth.workspace.id, source));
       }
 
@@ -753,7 +764,7 @@ export async function createApp(options = {}) {
     }
   });
 
-  app.post("/api/sources/upload-and-build", requireAuth, uploader.array("files"), async (req, res, next) => {
+  app.post("/api/sources/upload-and-build", requireAuth, uploader.array("files", MAX_UPLOAD_FILES), async (req, res, next) => {
     try {
       const files = Array.isArray(req.files) ? req.files : [];
       const createdSources = [];
@@ -761,7 +772,7 @@ export async function createApp(options = {}) {
       const jobIds = [];
 
       for (const file of files) {
-        const source = await summarizeUpload(file, { parserAdapter });
+        const source = await summarizeUpload(file, { sourceParsingService });
         db.createSource(req.auth.workspace.id, source);
         createdSources.push(source);
 
@@ -822,7 +833,7 @@ export async function createApp(options = {}) {
           size: stats.size,
           path: source.storagePath,
         },
-        { ...source, parserAdapter },
+        { ...source, sourceParsingService },
       );
 
       reparsed.wikiBuilt = false;
@@ -873,6 +884,13 @@ export async function createApp(options = {}) {
       return;
     }
 
+    // P2: Promote 同步创建 Runtime entity entry（如果不存在）
+    const entityEntry = ensureManualEntityRuntimeEntry(
+      workspaceId,
+      wikiPage.title,
+      new Date().toISOString(),
+    );
+    const entityId = entityEntry.id;
     const node = {
       id: wikiPage.title.slice(0, 10),
       type: wikiPage.type,
@@ -887,28 +905,6 @@ export async function createApp(options = {}) {
       version: 1,
     };
     db.saveOntologyNode(workspaceId, node);
-
-    // P2: Promote 同步创建 Runtime entity entry（如果不存在）
-    const entityId = `entry_entity_${wikiPage.title.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "_").replace(/^_|_$/g, "")}`;
-    const runtimeSnapshot = db.getRuntimeSnapshot(workspaceId);
-    const existingEntity = runtimeSnapshot.entries.find((e) => e.id === entityId);
-    if (!existingEntity) {
-      const promoteEntry = {
-        id: entityId,
-        kind: "entity",
-        title: wikiPage.title,
-        summary: wikiPage.abstract || `由 Wiki 页面「${wikiPage.title}」promote 生成的本体实体。`,
-        bodyMarkdown: wikiPage.abstract || `# ${wikiPage.title}\n\n由 Wiki 页面「${wikiPage.title}」promote 生成。`,
-        aliases: [],
-        tags: ["promoted", "wiki"],
-        status: "active",
-        compiledFrom: [],
-        sourceRefs: [],
-        version: 1,
-        updatedAt: new Date().toISOString(),
-      };
-      db.saveRuntimeEntry(workspaceId, promoteEntry);
-    }
 
     res.status(201).json({ node, existed: false });
   });
@@ -926,8 +922,15 @@ export async function createApp(options = {}) {
       .map(normalizeRelationToEdge)
       .filter(Boolean);
 
-    const result = db.addOntologyEdges(req.auth.workspace.id, edges);
-    res.status(201).json(result);
+    const workspaceId = req.auth.workspace.id;
+    const result = db.addOntologyEdges(workspaceId, edges);
+    const runtimeEdges = result.createdEdges
+      .map((edge) => syncLegacyRelationToRuntime(workspaceId, edge, {
+        sourceId: `wiki_relation_${wikiPage.id}`,
+        confidence: 0.8,
+      }))
+      .filter(Boolean);
+    res.status(201).json({ ...result, runtimeEdges });
   });
 
   app.get("/api/ontology/export", requireAuth, (req, res) => {
@@ -950,7 +953,13 @@ export async function createApp(options = {}) {
       time: new Date().toLocaleString("zh-CN"),
       ...parsed.data,
     };
-    db.addExpertInjection(req.auth.workspace.id, injection);
+    const savedInjection = db.addExpertInjection(req.auth.workspace.id, injection);
+    saveHumanRuntimeEntry(req.auth.workspace.id, expertRuntimeEntry({
+      workspaceId: req.auth.workspace.id,
+      injection: savedInjection,
+      updatedAt: new Date().toISOString(),
+    }));
+    ensureManualEntityRuntimeEntry(req.auth.workspace.id, savedInjection.entity, new Date().toISOString());
 
     const bootstrap = db.getBootstrap(req.auth.workspace.id);
     const existingNode = bootstrap.ontologyNodes.find((node) => node.id === injection.entity);
@@ -962,7 +971,7 @@ export async function createApp(options = {}) {
       });
     }
 
-    res.status(201).json({ injection });
+    res.status(201).json({ injection: savedInjection });
   });
 
   app.post("/api/qa-records", requireAuth, (req, res) => {
@@ -973,6 +982,11 @@ export async function createApp(options = {}) {
     }
 
     const record = db.addQaRecord(req.auth.workspace.id, parsed.data);
+    saveHumanRuntimeEntry(req.auth.workspace.id, qaRuntimeEntry({
+      workspaceId: req.auth.workspace.id,
+      record,
+      updatedAt: new Date().toISOString(),
+    }));
     res.status(201).json({ record });
   });
 
@@ -987,8 +1001,13 @@ export async function createApp(options = {}) {
       time: `${new Date().toLocaleString("zh-CN")} · ${parsed.data.period}`,
       ...parsed.data,
     };
-    db.addMemory(req.auth.workspace.id, memory);
-    res.status(201).json({ memory });
+    const savedMemory = db.addMemory(req.auth.workspace.id, memory);
+    saveHumanRuntimeEntry(req.auth.workspace.id, memoryRuntimeEntry({
+      workspaceId: req.auth.workspace.id,
+      memory: savedMemory,
+      updatedAt: new Date().toISOString(),
+    }));
+    res.status(201).json({ memory: savedMemory });
   });
 
   app.get("/api/chat/thread", requireAuth, (req, res) => {
@@ -1219,7 +1238,7 @@ export async function createApp(options = {}) {
     }
 
     const bootstrap = db.getBootstrap(req.auth.workspace.id);
-    const payload = buildReportPackage({
+    const payload = reportService.generateReport({
       workspace: {
         id: req.auth.workspace.id,
         name: req.auth.workspace.name,
@@ -1243,7 +1262,7 @@ export async function createApp(options = {}) {
       }
 
       const bootstrap = db.getBootstrap(req.auth.workspace.id);
-      const payload = buildReportPackage({
+      const payload = reportService.generateReport({
         workspace: {
           id: req.auth.workspace.id,
           name: req.auth.workspace.name,
@@ -1256,9 +1275,11 @@ export async function createApp(options = {}) {
       });
 
       const workspaceExportDir = path.join(exportsDir, req.auth.workspace.id);
-      const exported = parsed.data.exportFormat === "docx"
-        ? await exportReportAsDocx({ outputDir: workspaceExportDir, report: payload.report })
-        : await exportReportAsPdf({ outputDir: workspaceExportDir, report: payload.report });
+      const exported = await reportService.exportReport({
+        outputDir: workspaceExportDir,
+        report: payload.report,
+        format: parsed.data.exportFormat,
+      });
 
       res.status(201).json({
         format: parsed.data.exportFormat,
@@ -1274,69 +1295,6 @@ export async function createApp(options = {}) {
     try {
       const workspaceId = req.auth.workspace.id;
       const runtime = db.getRuntimeSnapshot(workspaceId);
-      const bootstrap = db.getBootstrap(workspaceId);
-
-      // P4: 将 Wiki Pages 和 Ontology 数据合并到 Runtime 导出中
-      // 找出在 Wiki/Ontology 中存在但 Runtime 中缺失的条目
-      const runtimeTitles = new Set((runtime.entries || []).map((e) => e.title));
-      const wikiEntries = (bootstrap.wikiPages || [])
-        .filter((wp) => !runtimeTitles.has(wp.title))
-        .map((wp) => ({
-          id: `entry_wiki_legacy_${wp.id}`,
-          kind: "page",
-          title: wp.title,
-          summary: wp.abstract || `Wiki 页面：${wp.title}`,
-          bodyMarkdown: wp.sections
-            ? wp.sections.map(([h, t]) => `## ${h}\n\n${t}`).join("\n\n")
-            : `# ${wp.title}\n\n${wp.abstract || ""}`,
-          aliases: [],
-          tags: ["wiki-legacy"],
-          status: "active",
-          sourceRefs: [],
-          compiledFrom: [],
-          version: 1,
-          updatedAt: wp.updatedAt || new Date().toISOString(),
-        }));
-
-      const ontologyNodesForExport = (bootstrap.ontologyNodes || [])
-        .filter((n) => !runtimeTitles.has(n.id))
-        .map((n) => ({
-          id: `entry_onto_legacy_${n.id}`,
-          kind: "entity",
-          title: n.id,
-          summary: n.expertNote || `本体节点「${n.id}」`,
-          bodyMarkdown: `# ${n.id}\n\n${n.expertNote || ""}\n\n专家权重：${n.expertWeight || 0}`,
-          aliases: [],
-          tags: ["ontology-legacy", ...(n.status === "stale" ? ["stale"] : [])],
-          status: n.status || "active",
-          sourceRefs: [],
-          compiledFrom: [],
-          version: 1,
-          updatedAt: n.updatedAt || new Date().toISOString(),
-        }));
-
-      // 合并 Ontology edges（不重复 Runtime 已有的边）
-      const runtimeEdgeKeys = new Set(
-        (runtime.edges || []).map((e) => `${e.fromEntryId}::${e.type}::${e.toEntryId}`),
-      );
-      const ontologyEdges = (bootstrap.ontologyEdges || [])
-        .filter((edge) => {
-          const key = `${edge.fromName}::${edge.type}::${edge.toName}`;
-          return !runtimeEdgeKeys.has(key);
-        })
-        .map((edge) => ({
-          fromEntryId: edge.fromName,
-          toEntryId: edge.toName,
-          type: edge.type || "related_to",
-          evidenceRefs: [],
-          confidence: edge.expertWeight ? Math.min(edge.expertWeight / 5, 1) : 0.5,
-        }));
-
-      const augmentedRuntime = {
-        ...runtime,
-        entries: [...(runtime.entries || []), ...wikiEntries, ...ontologyNodesForExport],
-        edges: [...(runtime.edges || []), ...ontologyEdges],
-      };
 
       const outputDir = path.join(llmWikiDir, workspaceId);
       const tmpDir = path.join(llmWikiDir, `${workspaceId}.tmp.${Date.now()}`);
@@ -1349,7 +1307,7 @@ export async function createApp(options = {}) {
             id: workspaceId,
             name: req.auth.workspace.name,
           },
-          runtime: augmentedRuntime,
+          runtime,
         });
 
         // 原子替换
@@ -1402,6 +1360,10 @@ export async function createApp(options = {}) {
       }
       if (error.code === "LIMIT_UNEXPECTED_FILE") {
         res.status(400).json({ error: "Unsupported file type." });
+        return;
+      }
+      if (error.code === "LIMIT_FILE_COUNT") {
+        res.status(400).json({ error: `Upload supports at most ${MAX_UPLOAD_FILES} files at a time.` });
         return;
       }
     }

@@ -52,16 +52,19 @@ describe("bootstrap and export flow", () => {
 
     const workspaceExportDir = path.join(rootDir, "llm-wiki", bootstrapResponse.body.workspace.id);
 
-    const emptyQueryResponse = await request(app)
+    const seededQueryResponse = await request(app)
       .get("/api/llm-wiki/query")
       .query({ q: "CoWoS" })
       .set("Cookie", cookie);
 
-    expect(emptyQueryResponse.status).toBe(200);
-    expect(emptyQueryResponse.body.query).toBe("CoWoS");
-    expect(emptyQueryResponse.body.entries).toEqual([]);
-    expect(emptyQueryResponse.body.relations).toEqual([]);
-    expect(emptyQueryResponse.body.evidence).toEqual([]);
+    expect(seededQueryResponse.status).toBe(200);
+    expect(seededQueryResponse.body.query).toBe("CoWoS");
+    expect(seededQueryResponse.body.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: expect.stringMatching(/CoWoS/) }),
+      ]),
+    );
+    expect(seededQueryResponse.body.evidence.length).toBeGreaterThan(0);
 
     const markdownPath = path.join(rootDir, "aurora.md");
     await fs.writeFile(

@@ -205,7 +205,7 @@ describe("chat APIs", () => {
     expect(otherBootstrap.body.chatMessages).toEqual([]);
   });
 
-  it("does not answer from memories and qa records without runtime evidence", async () => {
+  it("answers from QA and memory notes after they are synced into runtime", async () => {
     const app = await makeApp();
 
     const registerResponse = await request(app).post("/api/auth/register").send({
@@ -240,8 +240,10 @@ describe("chat APIs", () => {
       .send({ question: "客户 A 的内部采购代号是什么？" });
 
     expect(askResponse.status).toBe(201);
-    expect(askResponse.body.answer).toMatch(/拒绝|没有足够证据|无法回答/);
-    expect(askResponse.body.citations).toEqual([]);
+    expect(askResponse.body.answer).toMatch(/Project Aurora|内部采购代号|runtime/);
+    expect(askResponse.body.citations).toEqual(
+      expect.arrayContaining([expect.stringMatching(/qa-note|memory-note/)]),
+    );
   });
 
   it("serves query and chat from the same runtime retrieval path", async () => {

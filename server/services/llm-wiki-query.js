@@ -30,6 +30,13 @@ function buildSearchTerms(query) {
     if (token.length >= 2) {
       terms.add(token);
     }
+    if (/[\u4e00-\u9fff]/u.test(token)) {
+      for (let size = 2; size <= 4; size++) {
+        for (let index = 0; index <= token.length - size; index++) {
+          terms.add(token.slice(index, index + size));
+        }
+      }
+    }
   }
 
   return Array.from(terms).filter(Boolean);
@@ -50,8 +57,21 @@ function scoreSearchText(text, query) {
   }, 0);
 }
 
+function bestMatchingChunk(text, query) {
+  const chunks = stripMarkdown(text)
+    .split(/(?:\n{2,}|。|！|？|\.\s+)/u)
+    .map((chunk) => normalizeText(chunk))
+    .filter((chunk) => chunk.length >= 8);
+  if (!chunks.length) {
+    return stripMarkdown(text);
+  }
+  return chunks
+    .map((chunk, index) => ({ chunk, score: scoreSearchText(chunk, query) + Math.max(0, 1 - index * 0.05) }))
+    .sort((left, right) => right.score - left.score)[0].chunk;
+}
+
 function buildExcerpt(text, query) {
-  const source = stripMarkdown(text);
+  const source = bestMatchingChunk(text, query);
   if (!source) {
     return "";
   }
@@ -59,13 +79,13 @@ function buildExcerpt(text, query) {
   const terms = buildSearchTerms(query);
   const match = terms.find((term) => source.toLowerCase().includes(term));
   if (!match) {
-    return source.slice(0, 180);
+    return source.slice(0, 220);
   }
 
   const loweredSource = source.toLowerCase();
   const matchIndex = loweredSource.indexOf(match);
-  const start = Math.max(0, matchIndex - 60);
-  const end = Math.min(source.length, matchIndex + match.length + 80);
+  const start = Math.max(0, matchIndex - 70);
+  const end = Math.min(source.length, matchIndex + match.length + 110);
   return source.slice(start, end);
 }
 
@@ -157,7 +177,7 @@ function mapRuntimeRelation(edge, entryMap, query) {
     toEntryId: edge.toEntryId,
     toTitle,
     type: edge.type,
-    score: scoreSearchText(searchable, query),
+    score: scoreSearchText(searchable, query) + (edge.type === "mentions" ? 10 : 0),
     evidenceRefs: edge.evidenceRefs || [],
   };
 }
